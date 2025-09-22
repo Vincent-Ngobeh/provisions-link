@@ -1,4 +1,5 @@
 # Byte-compiled / optimized / DLL files
+*.pyc
 __pycache__/
 *.py[codz]
 *$py.class
@@ -12,6 +13,8 @@ build/
 develop-eggs/
 dist/
 downloads/
+media/
+staticfiles/
 eggs/
 .eggs/
 lib/
@@ -60,6 +63,7 @@ cover/
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
+*.sqlite3
 
 # Flask stuff:
 instance/
@@ -144,6 +148,8 @@ ENV/
 env.bak/
 venv.bak/
 
+!.env.example
+
 # Spyder project settings
 .spyderproject
 .spyproject
@@ -205,3 +211,20 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Frontend
+node_modules/
+dist/
+.env.local
+.env.production
+
