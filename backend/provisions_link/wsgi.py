@@ -11,6 +11,7 @@ import os
 
 from django.core.wsgi import get_wsgi_application
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'provisions_link.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE',
+                      'provisions_link.settings.development')
 
 application = get_wsgi_application()

@@ -15,7 +15,20 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 # Security
-SECRET_KEY = os.environ['SECRET_KEY']  # Required
+SECRET_KEY = os.environ.get('SECRET_KEY')
+if not SECRET_KEY:
+    raise ValueError("SECRET_KEY environment variable is not set!")
+
+# GDAL/GEOS Configuration for Windows
+if os.name == 'nt':  # Windows only
+    # Set GDAL and GEOS library paths
+    GDAL_LIBRARY_PATH = r'C:\Users\Vince\AppData\Local\Programs\OSGeo4W\bin\gdal311.dll'
+    GEOS_LIBRARY_PATH = r'C:\Users\Vince\AppData\Local\Programs\OSGeo4W\bin\geos_c.dll'
+
+    # Ensure OSGeo4W is in PATH
+    osgeo_bin = r'C:\Users\Vince\AppData\Local\Programs\OSGeo4W\bin'
+    if osgeo_bin not in os.environ.get('PATH', ''):
+        os.environ['PATH'] = osgeo_bin + ';' + os.environ['PATH']
 
 # Core Django applications
 DJANGO_APPS = [
@@ -119,6 +132,7 @@ MEDIA_ROOT = BASE_DIR / 'media'
 
 # Primary key field configuration
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+AUTH_USER_MODEL = 'core.User'
 
 # Django REST Framework configuration
 REST_FRAMEWORK = {
@@ -135,6 +149,12 @@ REST_FRAMEWORK = {
         'rest_framework.filters.SearchFilter',
         'rest_framework.filters.OrderingFilter',
     ],
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+        'rest_framework.renderers.BrowsableAPIRenderer',  # Nice for development
+    ],
+    'DATETIME_FORMAT': '%Y-%m-%d %H:%M:%S',
+    'DEFAULT_SCHEMA_CLASS': 'rest_framework.schemas.coreapi.AutoSchema',
 }
 
 # Logging configuration
