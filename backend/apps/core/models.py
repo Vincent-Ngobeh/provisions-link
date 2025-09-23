@@ -1,3 +1,145 @@
-from django.db import models
+# apps/core/models.py
 
-# Create your models here.
+from django.contrib.auth.models import AbstractUser
+from django.contrib.gis.db import models
+from django.core.validators import RegexValidator
+from django.utils.translation import gettext_lazy as _
+
+
+class User(AbstractUser):
+    """
+    Custom User model extending AbstractUser.
+    This will be the base for all authentication in the system.
+    """
+    email = models.EmailField(
+        _('email address'),
+        unique=True,
+        error_messages={
+            'unique': _("A user with that email already exists."),
+        },
+    )
+
+    phone_regex = RegexValidator(
+        regex=r'^(?:(?:\+44)|(?:0))(?:\d\s?){10,11}$',
+        message="Phone number must be entered in the format: '+44' or '0' followed by 10-11 digits."
+    )
+    phone_number = models.CharField(
+        validators=[phone_regex],
+        max_length=17,
+        blank=True,
+        help_text="UK phone number"
+    )
+
+    # Use email as the username field
+    USERNAME_FIELD = 'email'
+    # username is still required for createsuperuser
+    REQUIRED_FIELDS = ['username']
+
+    class Meta:
+        db_table = 'users'
+        verbose_name = _('User')
+        verbose_name_plural = _('Users')
+
+    def __str__(self):
+        return self.email
+
+
+class Address(models.Model):
+    """
+    User addresses for delivery.
+    """
+    ADDRESS_TYPE_CHOICES = [
+        ('home', 'Home'),
+        ('work', 'Work'),
+        ('other', 'Other'),
+    ]
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='addresses'
+    )
+    address_name = models.CharField(
+        max_length=50,
+        choices=ADDRESS_TYPE_CHOICES,
+        default='home'
+    )
+    recipient_name = models.CharField(max_length=100)
+    phone_number = models.CharField(
+        max_length=17,
+        help_text="Contact number for delivery"
+    )
+    line1 = models.CharField(max_length=255, verbose_name="Address Line 1")
+    line2 = models.CharField(max_length=255, blank=True,
+                             verbose_name="Address Line 2")
+    city = models.CharField(max_length=100)
+    postcode = models.CharField(max_length=10)
+    country = models.CharField(max_length=2, default='GB')
+
+    # PostGIS field for location-based queries
+    location = models.PointField(geography=True, null=True, blank=True)
+
+    is_default = models.BooleanField(default=False)
+
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'addresses'
+        verbose_name = _('Address')
+        verbose_name_plural = _('Addresses')
+        unique_together = [['user', 'address_name']]
+        indexes = [
+            models.Index(fields=['user', 'is_default']),
+        ]
+
+    def __str__(self):
+        return f"{self.address_name} - {self.postcode}"
+
+    def save(self, *args, **kwargs):
+        # If this is set as default, unset other defaults for this user
+        if self.is_default:
+            Address.objects.filter(
+                user=self.user,
+                is_default=True
+            ).exclude(pk=self.pk).update(is_default=False)
+        super().save(*args, **kwargs)
+
+
+class PrivacySettings(models.Model):
+    """
+    GDPR-compliant privacy settings for users.
+    """
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='privacy_settings'
+    )
+    marketing_emails = models.BooleanField(
+        default=False,
+        help_text="Receive marketing emails and promotions"
+    )
+    order_updates = models.BooleanField(
+        default=True,
+        help_text="Receive order status updates"
+    )
+    data_sharing = models.BooleanField(
+        default=False,
+        help_text="Allow anonymized data sharing with partners"
+    )
+    analytics_tracking = models.BooleanField(
+        default=False,
+        help_text="Allow analytics tracking for improved experience"
+    )
+
+    # Timestamps
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'privacy_settings'
+        verbose_name = _('Privacy Settings')
+        verbose_name_plural = _('Privacy Settings')
+
+    def __str__(self):
+        return f"Privacy settings for {self.user.email}"
