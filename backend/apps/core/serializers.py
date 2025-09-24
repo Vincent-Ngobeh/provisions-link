@@ -1,5 +1,6 @@
 # apps/core/serializers.py
 
+from datetime import timezone
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -154,3 +155,42 @@ class PasswordChangeSerializer(serializers.Serializer):
         if attrs['new_password'] != attrs['new_password_confirm']:
             raise serializers.ValidationError("New passwords don't match")
         return attrs
+
+
+class GDPRExportSerializer(serializers.Serializer):
+    """Format all user data for GDPR export"""
+
+    def to_representation(self, user):
+        from apps.vendors.serializers import VendorDetailSerializer
+        from apps.orders.serializers import OrderDetailSerializer
+        from apps.buying_groups.serializers import GroupCommitmentSerializer
+
+        data = {
+            'exported_at': timezone.now().isoformat(),
+            'user_profile': UserPrivateSerializer(user).data,
+            'privacy_settings': PrivacySettingsSerializer(
+                user.privacy_settings
+            ).data if hasattr(user, 'privacy_settings') else None,
+            'addresses': AddressSerializer(
+                user.addresses.all(), many=True
+            ).data,
+        }
+
+        # Include vendor data if applicable
+        if hasattr(user, 'vendor'):
+            data['vendor_profile'] = VendorDetailSerializer(user.vendor).data
+
+        # Order history
+        data['orders'] = OrderDetailSerializer(
+            user.orders.all().select_related('vendor', 'delivery_address')
+            .prefetch_related('items__product'),
+            many=True
+        ).data
+
+        # Group commitments
+        data['group_commitments'] = GroupCommitmentSerializer(
+            user.group_commitments.all().select_related('group__product'),
+            many=True
+        ).data
+
+        return data
