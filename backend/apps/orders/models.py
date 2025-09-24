@@ -15,7 +15,7 @@ from apps.buying_groups.models import BuyingGroup
 def generate_order_reference():
     """Generate unique order reference number."""
     year = timezone.now().year
-    random_part = uuid.uuid4().hex[:6].upper()
+    random_part = uuid.uuid4().hex[:5].upper()
     return f"PL-{year}-{random_part}"
 
 
