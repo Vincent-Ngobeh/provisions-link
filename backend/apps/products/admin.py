@@ -2,7 +2,7 @@
 
 from django.contrib import admin
 from django.utils.html import format_html
-from .models import Category, Tag, Product
+from .models import Category, Tag, Product, ProductTag
 
 
 @admin.register(Category)
@@ -21,6 +21,21 @@ class TagAdmin(admin.ModelAdmin):
     search_fields = ('name',)
     prepopulated_fields = {'slug': ('name',)}
     ordering = ('tag_type', 'name')
+
+
+# Move ProductTagAdmin outside and create inline version
+@admin.register(ProductTag)
+class ProductTagAdmin(admin.ModelAdmin):
+    list_display = ('product', 'tag')
+    list_filter = ('tag__tag_type', 'tag')
+    search_fields = ('product__name', 'tag__name')
+
+
+class ProductTagInline(admin.TabularInline):
+    """Inline admin for managing product tags"""
+    model = ProductTag
+    extra = 1
+    autocomplete_fields = ['tag']  # Makes tag selection easier
 
 
 @admin.register(Product)
@@ -57,7 +72,8 @@ class ProductAdmin(admin.ModelAdmin):
         'created_at',
         'updated_at'
     )
-    filter_horizontal = ('tags',)
+
+    inlines = [ProductTagInline]
 
     fieldsets = (
         ('Basic Information', {
@@ -67,7 +83,7 @@ class ProductAdmin(admin.ModelAdmin):
                 'name',
                 'slug',
                 'description',
-                'tags'
+
             )
         }),
         ('Product Codes', {

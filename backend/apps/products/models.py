@@ -197,6 +197,7 @@ class Product(models.Model):
     # Tags
     tags = models.ManyToManyField(
         Tag,
+        through='ProductTag',
         related_name='products',
         blank=True
     )
@@ -244,3 +245,33 @@ class Product(models.Model):
     def vat_amount(self):
         """Calculate VAT amount."""
         return self.price * self.vat_rate
+
+
+class ProductTag(models.Model):
+    """
+    Junction table for Product and Tag many-to-many relationship.
+    Explicit model as shown in ERD.
+    """
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name='product_tags'
+    )
+    tag = models.ForeignKey(
+        Tag,
+        on_delete=models.CASCADE,
+        related_name='tag_products'
+    )
+
+    class Meta:
+        db_table = 'product_tags'
+        verbose_name = _('Product Tag')
+        verbose_name_plural = _('Product Tags')
+        unique_together = [['product', 'tag']]
+        indexes = [
+            models.Index(fields=['product']),
+            models.Index(fields=['tag']),
+        ]
+
+    def __str__(self):
+        return f"{self.product.name} - {self.tag.name}"
