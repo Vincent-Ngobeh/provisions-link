@@ -19,15 +19,17 @@ SECRET_KEY = os.environ.get('SECRET_KEY')
 if not SECRET_KEY:
     raise ValueError("SECRET_KEY environment variable is not set!")
 
-# GDAL/GEOS Configuration for Windows
+# GDAL/GEOS Configuration (only needed for Windows)
 if os.name == 'nt':  # Windows only
-    # Set GDAL and GEOS library paths
-    GDAL_LIBRARY_PATH = r'C:\Users\Vince\AppData\Local\Programs\OSGeo4W\bin\gdal311.dll'
-    GEOS_LIBRARY_PATH = r'C:\Users\Vince\AppData\Local\Programs\OSGeo4W\bin\geos_c.dll'
+    gdal_path = os.environ.get('GDAL_LIBRARY_PATH')
+    geos_path = os.environ.get('GEOS_LIBRARY_PATH')
+    osgeo_bin = os.environ.get('OSGEO_BIN_PATH')
 
-    # Ensure OSGeo4W is in PATH
-    osgeo_bin = r'C:\Users\Vince\AppData\Local\Programs\OSGeo4W\bin'
-    if osgeo_bin not in os.environ.get('PATH', ''):
+    if gdal_path and os.path.exists(gdal_path):
+        GDAL_LIBRARY_PATH = gdal_path
+    if geos_path and os.path.exists(geos_path):
+        GEOS_LIBRARY_PATH = geos_path
+    if osgeo_bin and osgeo_bin not in os.environ.get('PATH', ''):
         os.environ['PATH'] = osgeo_bin + ';' + os.environ['PATH']
 
 # Core Django applications
