@@ -1,0 +1,9 @@
+venv/
+*.pyc
+__pycache__/
+.pytest_cache/
+*.sqlite3
+.env.local
+.coverage
+htmlcov/
+.DS_Store
