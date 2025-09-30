@@ -6,10 +6,27 @@ Environment-specific settings should override these in their respective files.
 """
 import os
 from pathlib import Path
-from dotenv import load_dotenv
 
-# Load environment variables
+
+# GDAL/GEOS Configuration (only needed for Windows)
+if os.name == 'nt':  # Windows only
+    # Set these as Django settings, not environment variables
+    GDAL_LIBRARY_PATH = r'C:\Users\Vince\AppData\Local\Programs\OSGeo4W\bin\gdal311.dll'
+    GEOS_LIBRARY_PATH = r'C:\Users\Vince\AppData\Local\Programs\OSGeo4W\bin\geos_c.dll'
+
+    # Also set environment variables for good measure
+    os.environ['GDAL_DATA'] = r'C:\Users\Vince\AppData\Local\Programs\OSGeo4W\share\gdal'
+    os.environ['PROJ_LIB'] = r'C:\Users\Vince\AppData\Local\Programs\OSGeo4W\share\proj'
+
+    # Add to PATH
+    osgeo_bin = r'C:\Users\Vince\AppData\Local\Programs\OSGeo4W\bin'
+    if osgeo_bin not in os.environ.get('PATH', ''):
+        os.environ['PATH'] = osgeo_bin + ';' + os.environ['PATH']
+
+
+from dotenv import load_dotenv
 load_dotenv()
+
 
 # Project root directory (three levels up from this file)
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -18,19 +35,6 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 SECRET_KEY = os.environ.get('SECRET_KEY')
 if not SECRET_KEY:
     raise ValueError("SECRET_KEY environment variable is not set!")
-
-# GDAL/GEOS Configuration (only needed for Windows)
-if os.name == 'nt':  # Windows only
-    gdal_path = os.environ.get('GDAL_LIBRARY_PATH')
-    geos_path = os.environ.get('GEOS_LIBRARY_PATH')
-    osgeo_bin = os.environ.get('OSGEO_BIN_PATH')
-
-    if gdal_path and os.path.exists(gdal_path):
-        GDAL_LIBRARY_PATH = gdal_path
-    if geos_path and os.path.exists(geos_path):
-        GEOS_LIBRARY_PATH = geos_path
-    if osgeo_bin and osgeo_bin not in os.environ.get('PATH', ''):
-        os.environ['PATH'] = osgeo_bin + ';' + os.environ['PATH']
 
 # Core Django applications
 DJANGO_APPS = [
@@ -135,6 +139,17 @@ MEDIA_ROOT = BASE_DIR / 'media'
 # Primary key field configuration
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 AUTH_USER_MODEL = 'core.User'
+
+# Stripe Configuration
+STRIPE_PUBLISHABLE_KEY = os.getenv('STRIPE_PUBLISHABLE_KEY', '')
+STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY', '')
+STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET', '')
+STRIPE_WEBHOOK_SECRET_DESTINATION = os.getenv(
+    'STRIPE_WEBHOOK_SECRET_DESTINATION', '')
+STRIPE_PLATFORM_ACCOUNT_ID = os.getenv('STRIPE_PLATFORM_ACCOUNT_ID', '')
+
+# Frontend URL (for Stripe redirects and other integrations)
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
 
 # Django REST Framework configuration
 REST_FRAMEWORK = {
