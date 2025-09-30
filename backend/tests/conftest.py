@@ -5,6 +5,7 @@ Provides reusable test fixtures for models, services, and common test data.
 from apps.products.models import Product, Category, Tag
 from apps.vendors.models import Vendor
 from apps.core.models import User, Address, PrivacySettings
+from apps.orders.models import Order, OrderItem
 from faker import Faker
 from factory.django import DjangoModelFactory
 import factory
@@ -242,6 +243,71 @@ class ProductFactory(DjangoModelFactory):
     featured = False
 
 
+class OrderFactory(DjangoModelFactory):
+    """Factory for creating test orders."""
+
+    class Meta:
+        model = Order
+        django_get_or_create = ('reference_number',)
+
+    reference_number = factory.Sequence(
+        lambda n: f"PL-{timezone.now().year}-{fake.bothify('?????').upper()}-{n}"
+    )
+    buyer = factory.SubFactory(UserFactory)
+    vendor = factory.SubFactory(VendorFactory)
+    delivery_address = factory.SubFactory(AddressFactory)
+    group = None
+
+    subtotal = Decimal('100.00')
+    vat_amount = Decimal('20.00')
+    delivery_fee = Decimal('5.00')
+    total = Decimal('125.00')
+    marketplace_fee = Decimal('10.00')
+    vendor_payout = Decimal('115.00')
+
+    stripe_payment_intent_id = factory.LazyAttribute(
+        lambda _: f"pi_{fake.uuid4()[:24]}"
+    )
+
+    delivery_notes = ''
+    status = 'pending'
+    paid_at = None
+    delivered_at = None
+
+    @classmethod
+    def _create(cls, model_class, *args, **kwargs):
+        """Override create to allow explicit created_at bypass of auto_now_add."""
+        # Extract created_at if provided, otherwise use current time
+        custom_created_at = kwargs.pop('created_at', None)
+
+        # Create object normally (auto_now_add will set created_at)
+        obj = model_class(*args, **kwargs)
+        obj.save()
+
+        # If custom created_at was provided, update it using queryset.update()
+        # This bypasses auto_now_add
+        if custom_created_at is not None:
+            model_class.objects.filter(pk=obj.pk).update(
+                created_at=custom_created_at)
+            obj.refresh_from_db()
+
+        return obj
+
+
+class OrderItemFactory(DjangoModelFactory):
+    """Factory for creating test order items."""
+
+    class Meta:
+        model = OrderItem
+
+    order = factory.SubFactory(OrderFactory)
+    product = factory.SubFactory(ProductFactory)
+    quantity = factory.Faker('random_int', min=1, max=10)
+    unit_price = Decimal('20.00')
+    total_price = Decimal('100.00')
+    discount_amount = Decimal('0.00')
+
+
 # GIS-dependent factories
 if HAS_GIS:
     class BuyingGroupFactory(DjangoModelFactory):
@@ -251,25 +317,38 @@ if HAS_GIS:
             model = BuyingGroup
 
         product = factory.SubFactory(ProductFactory)
-
-        # Location - use lazy Point import
         center_point = factory.LazyAttribute(
             lambda _: get_point_class()(-0.1276, 51.5074))
         radius_km = 5
         area_name = factory.LazyAttribute(lambda _: f"{fake.city()} area")
 
-        # Group parameters
         target_quantity = 50
         current_quantity = 0
         min_quantity = 30
         discount_percent = Decimal('15.00')
 
-        # Timing
         expires_at = factory.LazyAttribute(
             lambda _: timezone.now() + timedelta(days=7))
 
-        # Status
         status = 'open'
+
+        @classmethod
+        def _create(cls, model_class, *args, **kwargs):
+            """Override create to allow explicit created_at bypass of auto_now_add."""
+            # Extract created_at if provided
+            custom_created_at = kwargs.pop('created_at', None)
+
+            # Create object normally
+            obj = model_class(*args, **kwargs)
+            obj.save()
+
+            # Update created_at using queryset.update() to bypass auto_now_add
+            if custom_created_at is not None:
+                model_class.objects.filter(pk=obj.pk).update(
+                    created_at=custom_created_at)
+                obj.refresh_from_db()
+
+            return obj
 
     class GroupCommitmentFactory(DjangoModelFactory):
         """Factory for creating test group commitments."""
@@ -281,16 +360,13 @@ if HAS_GIS:
         buyer = factory.SubFactory(UserFactory)
         quantity = factory.Faker('random_int', min=1, max=10)
 
-        # Location - use lazy Point import
         buyer_location = factory.LazyAttribute(
             lambda _: get_point_class()(-0.1276, 51.5074))
         buyer_postcode = factory.LazyAttribute(lambda _: fake.postcode())
 
-        # Payment
         stripe_payment_intent_id = factory.LazyAttribute(
             lambda _: f"pi_{fake.uuid4()[:24]}")
 
-        # Status
         status = 'pending'
 
 
