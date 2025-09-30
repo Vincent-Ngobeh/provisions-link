@@ -183,8 +183,8 @@ class CategoryFactory(DjangoModelFactory):
     class Meta:
         model = Category
 
-    name = factory.Faker('word')
-    slug = factory.Faker('slug')
+    name = factory.Sequence(lambda n: f'Category-{n}')
+    slug = factory.Sequence(lambda n: f'category-{n}')
     parent = None
     display_order = factory.Sequence(lambda n: n)
     is_active = True
