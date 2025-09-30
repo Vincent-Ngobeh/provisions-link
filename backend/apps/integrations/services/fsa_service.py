@@ -9,9 +9,10 @@ from decimal import Decimal
 
 from django.utils import timezone
 from django.conf import settings
+from django.db import models
+from django.db.models import Q
 from celery import shared_task
 
-from apps.core import models
 from apps.core.services.base import (
     BaseService, ExternalServiceError, ServiceResult
 )
@@ -506,8 +507,8 @@ class FSAService(BaseService):
         # Get all vendors that need updating (not checked in last 7 days)
         cutoff_date = timezone.now() - timedelta(days=7)
         vendors = Vendor.objects.filter(
-            models.Q(fsa_last_checked__isnull=True) |
-            models.Q(fsa_last_checked__lt=cutoff_date)
+            Q(fsa_last_checked__isnull=True) |
+            Q(fsa_last_checked__lt=cutoff_date)
         )
 
         stats['total'] = vendors.count()
