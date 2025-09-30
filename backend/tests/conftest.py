@@ -487,6 +487,30 @@ def group_buying_service():
         pytest.skip("GIS not available for group buying service")
 
 
+@pytest.fixture
+def order_service():
+    """Create OrderService instance."""
+    from apps.orders.services.order_service import OrderService
+    return OrderService()
+
+
+@pytest.fixture
+def test_order(db, test_user, approved_vendor, test_address):
+    """Create a test order."""
+    return OrderFactory(
+        buyer=test_user,
+        vendor=approved_vendor,
+        delivery_address=test_address,
+        status='pending',
+        subtotal=Decimal('100.00'),
+        vat_amount=Decimal('20.00'),
+        delivery_fee=Decimal('5.00'),
+        total=Decimal('125.00'),
+        marketplace_fee=Decimal('10.00'),
+        vendor_payout=Decimal('115.00')
+    )
+
+
 # ==================== Mock Fixtures ====================
 
 @pytest.fixture
