@@ -10,8 +10,8 @@ from django.db import transaction
 from django.db.models import F, Q, Sum, Count, Avg, Prefetch
 from django.utils import timezone
 from django.contrib.gis.geos import Point
+from django.contrib.gis.db.models.functions import Distance
 from django.contrib.gis.measure import D
-from django.contrib.gis.measure import Distance
 
 from apps.core.services.base import (
     BaseService, ServiceResult, ValidationError,
