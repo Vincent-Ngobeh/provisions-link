@@ -95,6 +95,7 @@ class Vendor(models.Model):
     stripe_account_id = models.CharField(
         max_length=200,
         blank=True,
+        null=True,
         help_text="Stripe Connect account ID"
     )
     commission_rate = models.DecimalField(
