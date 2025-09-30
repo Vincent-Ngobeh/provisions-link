@@ -156,6 +156,8 @@ class VendorService(BaseService):
 
             onboarding_url = None
             if stripe_result.success:
+                vendor.stripe_account_id = stripe_result.data.get('account_id')
+                vendor.save(update_fields=['stripe_account_id'])
                 onboarding_url = stripe_result.data.get('onboarding_url')
 
             self.log_info(
