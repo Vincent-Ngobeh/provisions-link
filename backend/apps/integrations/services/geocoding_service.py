@@ -212,36 +212,37 @@ class GeocodingService(BaseService):
     def calculate_distance(
         self,
         point1: Point,
-        point2: Point,
-        unit: str = 'km'
+        point2: Point
     ) -> Decimal:
         """
-        Calculate distance between two points.
+        Calculate distance between two points in kilometers.
 
         Args:
-            point1: First point
-            point2: Second point  
-            unit: Unit for distance ('km' or 'miles')
+            point1: First Point
+            point2: Second Point
 
         Returns:
-            Distance in specified unit
+            Distance in kilometers as Decimal
         """
         try:
-            # Use GeoDjango's distance calculation
-            distance = point1.distance(point2)
+            # Calculate using geodesic distance (haversine formula already implemented in models)
+            # Point.distance() returns degrees for SRID 4326, convert to km
+            from math import radians, cos, sin, sqrt, atan2
 
-            if unit == 'km':
-                return Decimal(str(distance.km))
-            elif unit == 'miles':
-                return Decimal(str(distance.mi))
-            else:
-                return Decimal(str(distance.m))  # Default to meters
+            lat1, lon1 = radians(point1.y), radians(point1.x)
+            lat2, lon2 = radians(point2.y), radians(point2.x)
+
+            dlat = lat2 - lat1
+            dlon = lon2 - lon1
+
+            a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+            c = 2 * atan2(sqrt(a), sqrt(1-a))
+            distance_km = 6371 * c  # Earth radius in km
+
+            return Decimal(str(distance_km))
 
         except Exception as e:
-            self.log_error(
-                f"Error calculating distance",
-                exception=e
-            )
+            self.log_error(f"Error calculating distance", exception=e)
             return Decimal('0')
 
     def find_nearby_postcodes(
