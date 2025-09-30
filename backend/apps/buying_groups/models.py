@@ -126,8 +126,21 @@ class BuyingGroup(models.Model):
         if self.is_expired:
             return False
         if buyer_location:
-            distance = self.center_point.distance(buyer_location)
-            return distance <= D(km=self.radius_km)
+            from math import radians, cos, sin, sqrt, atan2
+
+            # Haversine formula for great circle distance
+            lat1, lon1 = radians(self.center_point.y), radians(
+                self.center_point.x)
+            lat2, lon2 = radians(buyer_location.y), radians(buyer_location.x)
+
+            dlat = lat2 - lat1
+            dlon = lon2 - lon1
+
+            a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+            c = 2 * atan2(sqrt(a), sqrt(1-a))
+            distance_km = 6371 * c  # Earth radius in km
+
+            return distance_km <= self.radius_km
         return False
 
     def update_status(self):
