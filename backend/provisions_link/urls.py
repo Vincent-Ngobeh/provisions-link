@@ -6,24 +6,40 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from django.http import JsonResponse
+from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 
 def home_view(request):
-    """Temporary homepage view"""
+    """API root information"""
     return JsonResponse({
         'message': 'Welcome to Provisions Link API',
         'version': '1.0.0',
         'endpoints': {
-            'admin': '/admin/',
             'api': '/api/v1/',
+            'admin': '/admin/',
+            'docs': '/api/docs/',
+            'schema': '/api/schema/',
+            'websocket': 'ws://localhost:8000/ws/group-buying/'
         }
     })
 
 
 urlpatterns = [
-    path('', home_view, name='home'),  # Root URL pattern
+    path('', home_view, name='home'),
     path('admin/', admin.site.urls),
+
+    # API v1 endpoints
     path('api/v1/', include('provisions_link.api_urls')),
+
+    # API Documentation (using drf-spectacular)
+    path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
+    path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'),
+         name='swagger-ui'),
+
+    # Stripe Webhooks (outside API versioning)
+    path('webhooks/stripe/',
+         'apps.integrations.views.stripe_webhook',
+         name='stripe-webhook'),
 ]
 
 # Serve media files in development
@@ -40,7 +56,7 @@ if settings.DEBUG:
             path('__debug__/', include(debug_toolbar.urls)),
         ] + urlpatterns
     except ImportError:
-        pass  # Debug toolbar not installed
+        pass
 
 # Admin site customization
 admin.site.site_header = "Provisions Link Admin"
