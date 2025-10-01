@@ -15,7 +15,7 @@ def home_view(request):
         'version': '1.0.0',
         'endpoints': {
             'admin': '/admin/',
-            # Add more endpoints as they become available
+            'api': '/api/v1/',
         }
     })
 
@@ -23,8 +23,7 @@ def home_view(request):
 urlpatterns = [
     path('', home_view, name='home'),  # Root URL pattern
     path('admin/', admin.site.urls),
-    # API endpoints will be added here
-    # path('api/v1/', include('provisions_link.api_urls')),
+    path('api/v1/', include('provisions_link.api_urls')),
 ]
 
 # Serve media files in development
