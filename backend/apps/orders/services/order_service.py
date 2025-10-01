@@ -19,6 +19,7 @@ from apps.vendors.models import Vendor
 from apps.products.models import Product
 from apps.core.models import User, Address
 from apps.buying_groups.models import BuyingGroup, GroupCommitment
+from apps.core.utils.websocket_utils import broadcaster
 
 
 class OrderService(BaseService):
@@ -380,6 +381,173 @@ class OrderService(BaseService):
             return ServiceResult.fail(
                 "Failed to create order from group",
                 error_code="CREATE_FAILED"
+            )
+
+    def create_orders_from_successful_group(self, group_id: int) -> ServiceResult:
+        """
+        Create orders for all commitments in a successful buying group.
+        Broadcasts real-time updates as each order is created.
+
+        Args:
+            group_id: ID of the successful buying group
+
+        Returns:
+            ServiceResult containing summary of created orders
+        """
+        from apps.core.utils.websocket_utils import broadcaster  # Import at top of file
+
+        try:
+            # Get the group
+            try:
+                group = BuyingGroup.objects.select_related(
+                    'product__vendor'
+                ).get(id=group_id)
+            except BuyingGroup.DoesNotExist:
+                return ServiceResult.fail(
+                    f"Group {group_id} not found",
+                    error_code="GROUP_NOT_FOUND"
+                )
+
+            # Validate group status
+            if group.status not in ['active', 'completed']:
+                return ServiceResult.fail(
+                    f"Group status must be active or completed, got {group.status}",
+                    error_code="INVALID_STATUS"
+                )
+
+            # Get all pending commitments
+            commitments = GroupCommitment.objects.filter(
+                group=group,
+                status='pending'
+            ).select_related('buyer')
+
+            if not commitments.exists():
+                return ServiceResult.ok({
+                    'message': 'No pending commitments to process',
+                    'orders_created': 0,
+                    'orders_failed': 0
+                })
+
+            # Process statistics
+            orders_created = []
+            orders_failed = []
+            total_revenue = Decimal('0.00')
+
+            # Process each commitment
+            for i, commitment in enumerate(commitments, 1):
+                try:
+                    # Broadcast progress for each order being created
+                    broadcaster.broadcast_progress(
+                        group_id=group_id,
+                        current_quantity=group.current_quantity,
+                        target_quantity=group.target_quantity,
+                        participants_count=commitments.count(),
+                        progress_percent=100.0,  # Group is complete
+                        time_remaining_seconds=0
+                    )
+
+                    # Create order from commitment
+                    result = self.create_order_from_group(
+                        group_id=group_id,
+                        commitment_id=commitment.id
+                    )
+
+                    if result.success:
+                        order = result.data
+                        orders_created.append(order.id)
+                        total_revenue += order.total
+
+                        # Log success
+                        self.log_info(
+                            f"Created order {order.reference_number} for commitment {commitment.id}",
+                            order_id=order.id,
+                            buyer_id=commitment.buyer.id,
+                            progress=f"{i}/{commitments.count()}"
+                        )
+
+                        # WEBSOCKET: Notify the specific buyer their order is ready
+                        # This would be sent to a user-specific channel
+                        # For now, we'll include it in group updates
+                        from apps.buying_groups.models import GroupUpdate
+                        GroupUpdate.objects.create(
+                            group=group,
+                            event_type='commitment',
+                            event_data={
+                                'message': f'Order created for {commitment.buyer.username}',
+                                'order_id': order.id,
+                                'order_reference': order.reference_number,
+                                'buyer_id': commitment.buyer.id
+                            }
+                        )
+
+                    else:
+                        orders_failed.append({
+                            'commitment_id': commitment.id,
+                            'buyer_id': commitment.buyer.id,
+                            'error': result.error
+                        })
+
+                        self.log_error(
+                            f"Failed to create order for commitment {commitment.id}",
+                            error=result.error,
+                            buyer_id=commitment.buyer.id
+                        )
+
+                except Exception as e:
+                    orders_failed.append({
+                        'commitment_id': commitment.id,
+                        'buyer_id': commitment.buyer.id,
+                        'error': str(e)
+                    })
+
+                    self.log_error(
+                        f"Exception creating order for commitment {commitment.id}",
+                        exception=e,
+                        buyer_id=commitment.buyer.id
+                    )
+
+            # Update group status if all orders created
+            if len(orders_created) == commitments.count():
+                group.status = 'completed'
+                group.save(update_fields=['status'])
+
+                # WEBSOCKET: Broadcast completion
+                broadcaster.broadcast_status_change(
+                    group_id=group_id,
+                    old_status='active',
+                    new_status='completed',
+                    reason=f'All {len(orders_created)} orders created successfully!'
+                )
+
+            # Log summary
+            self.log_info(
+                f"Processed group {group_id} orders",
+                group_id=group_id,
+                total_commitments=commitments.count(),
+                orders_created=len(orders_created),
+                orders_failed=len(orders_failed),
+                total_revenue=float(total_revenue)
+            )
+
+            return ServiceResult.ok({
+                'group_id': group_id,
+                'total_commitments': commitments.count(),
+                'orders_created': len(orders_created),
+                'orders_failed': len(orders_failed),
+                'failed_details': orders_failed,
+                'total_revenue': total_revenue,
+                'status': 'complete' if len(orders_failed) == 0 else 'partial'
+            })
+
+        except Exception as e:
+            self.log_error(
+                f"Error processing successful group {group_id}",
+                exception=e,
+                group_id=group_id
+            )
+            return ServiceResult.fail(
+                "Failed to process group orders",
+                error_code="PROCESSING_FAILED"
             )
 
     def update_order_status(
