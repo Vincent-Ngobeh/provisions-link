@@ -1,10 +1,13 @@
 """
 WebSocket routing for buying groups.
-Will be implemented when building the group buying feature.
+Maps WebSocket URLs to consumers.
 """
 from django.urls import re_path
+from . import consumers
 
-# Placeholder - will add consumers later
 websocket_urlpatterns = [
-    # re_path(r'ws/group-buying/(?P<group_id>\w+)/$', consumers.GroupBuyingConsumer.as_asgi()),
+    re_path(
+        r'ws/group-buying/$',
+        consumers.GroupBuyingConsumer.as_asgi()
+    ),
 ]
