@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   db:
     image: postgis/postgis:14-3.2
@@ -17,6 +15,19 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   backend:
     build: .
     command: sh -c "sleep 10 && python manage.py runserver 0.0.0.0:8000"
@@ -27,6 +38,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     env_file:
       - .env
     environment:
@@ -35,6 +48,9 @@ services:
       DB_NAME: provisions_link
       DB_USER: provisions_user
       DB_PASSWORD: provisions_pass
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
 
 volumes:
   postgres_data:
+  redis_data:
