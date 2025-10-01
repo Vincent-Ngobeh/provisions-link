@@ -1,6 +1,7 @@
 """
 Group buying service for managing location-based group purchases.
 This service handles the core business logic for group buying features.
+WebSocket broadcasting for real-time updates.
 """
 from decimal import Decimal
 from typing import Optional, List, Dict, Any
@@ -19,12 +20,14 @@ from apps.core.services.base import (
 from apps.buying_groups.models import BuyingGroup, GroupCommitment, GroupUpdate
 from apps.products.models import Product
 from apps.core.models import User
+from apps.core.utils.websocket_utils import broadcaster  # ADD THIS IMPORT
 
 
 class GroupBuyingService(BaseService):
     """
     Service for managing group buying operations.
     Handles group creation, commitment processing, and threshold calculations.
+    Now includes real-time WebSocket broadcasting.
     """
 
     # Business rule constants
@@ -96,7 +99,7 @@ class GroupBuyingService(BaseService):
                     error_code="INSUFFICIENT_STOCK"
                 )
 
-            # Geocode postcode (placeholder for now - will be replaced with real geocoding)
+            # Geocode postcode
             from apps.integrations.services.geocoding_service import GeocodingService
             geo_service = GeocodingService()
             location_result = geo_service.geocode_postcode(postcode)
@@ -229,7 +232,7 @@ class GroupBuyingService(BaseService):
         buyer_postcode: str
     ) -> ServiceResult:
         """
-        Commit a buyer to a group purchase.
+        Commit a buyer to a group purchase with real-time updates.
 
         Args:
             group_id: ID of the buying group
@@ -350,11 +353,52 @@ class GroupBuyingService(BaseService):
             # Refresh from DB to get updated value
             group.refresh_from_db()
 
+            # Get updated counts for broadcasting
+            participants_count = group.commitments.filter(
+                status='pending').count()
+            progress_percent = float(group.progress_percent)
+
+            # Calculate time remaining
+            time_remaining = group.time_remaining
+            time_remaining_seconds = int(
+                time_remaining.total_seconds()) if time_remaining else 0
+
+            # WEBSOCKET: Broadcast progress update
+            broadcaster.broadcast_progress(
+                group_id=group.id,
+                current_quantity=group.current_quantity,
+                target_quantity=group.target_quantity,
+                participants_count=participants_count,
+                progress_percent=progress_percent,
+                time_remaining_seconds=time_remaining_seconds
+            )
+
+            # WEBSOCKET: Broadcast new commitment
+            buyer_name = buyer.get_full_name() or buyer.username or 'A buyer'
+            broadcaster.broadcast_new_commitment(
+                group_id=group.id,
+                buyer_name=buyer_name,
+                quantity=quantity,
+                new_total=group.current_quantity,
+                participants_count=participants_count
+            )
+
+            # WEBSOCKET: Check if threshold reached (80%)
+            old_progress = progress_percent - \
+                (quantity / group.target_quantity * 100)
+            if progress_percent >= 80 and old_progress < 80:
+                broadcaster.broadcast_threshold_reached(
+                    group_id=group.id,
+                    threshold_percent=80,
+                    current_quantity=group.current_quantity,
+                    target_quantity=group.target_quantity
+                )
+
             # Check if target reached
             if group.current_quantity >= group.target_quantity:
                 self._handle_target_reached(group)
 
-            # Create update event
+            # Create update event for database tracking
             GroupUpdate.objects.create(
                 group=group,
                 event_type='commitment',
@@ -362,7 +406,7 @@ class GroupBuyingService(BaseService):
                     'buyer_id': buyer.id,
                     'quantity': quantity,
                     'current_total': group.current_quantity,
-                    'progress_percent': float(group.progress_percent)
+                    'progress_percent': progress_percent
                 }
             )
 
@@ -372,7 +416,12 @@ class GroupBuyingService(BaseService):
                 quantity=quantity
             )
 
-            return ServiceResult.ok(commitment)
+            return ServiceResult.ok({
+                'commitment': commitment,
+                'payment_intent': payment_result.data,
+                'group_status': group.status,
+                'progress_percent': progress_percent
+            })
 
         except Exception as e:
             self.log_error(f"Error creating commitment", exception=e)
@@ -400,16 +449,26 @@ class GroupBuyingService(BaseService):
 
     def _handle_target_reached(self, group: BuyingGroup) -> None:
         """
-        Handle actions when a group reaches its target.
+        Handle actions when a group reaches its target with WebSocket notification.
 
         Args:
             group: The buying group that reached target
         """
+        old_status = group.status
+
         # Update status
         group.status = 'active'
         group.save(update_fields=['status'])
 
-        # Create notification event
+        # WEBSOCKET: Broadcast status change
+        broadcaster.broadcast_status_change(
+            group_id=group.id,
+            old_status=old_status,
+            new_status='active',
+            reason='Target quantity reached!'
+        )
+
+        # Create notification event for database
         GroupUpdate.objects.create(
             group=group,
             event_type='threshold',
@@ -432,7 +491,7 @@ class GroupBuyingService(BaseService):
 
     def cancel_commitment(self, commitment_id: int, buyer: User) -> ServiceResult:
         """
-        Cancel a buyer's commitment to a group.
+        Cancel a buyer's commitment to a group with WebSocket notifications.
 
         Args:
             commitment_id: ID of the commitment to cancel
@@ -484,14 +543,40 @@ class GroupBuyingService(BaseService):
                 group.save(update_fields=['current_quantity'])
                 group.refresh_from_db()
 
-                # Create update event
+                # Get updated counts for broadcasting
+                participants_count = group.commitments.filter(
+                    status='pending').count()
+                progress_percent = float(group.progress_percent)
+                time_remaining = group.time_remaining
+                time_remaining_seconds = int(
+                    time_remaining.total_seconds()) if time_remaining else 0
+
+                # WEBSOCKET: Broadcast the cancellation
+                broadcaster.broadcast_commitment_cancelled(
+                    group_id=group.id,
+                    quantity=commitment.quantity,
+                    new_total=group.current_quantity,
+                    participants_count=participants_count
+                )
+
+                # WEBSOCKET: Broadcast updated progress
+                broadcaster.broadcast_progress(
+                    group_id=group.id,
+                    current_quantity=group.current_quantity,
+                    target_quantity=group.target_quantity,
+                    participants_count=participants_count,
+                    progress_percent=progress_percent,
+                    time_remaining_seconds=time_remaining_seconds
+                )
+
+                # Create update event for database
                 GroupUpdate.objects.create(
                     group=group,
                     event_type='cancelled',
                     event_data={
                         'buyer_id': buyer.id,
                         'quantity': commitment.quantity,
-                        'current_total': group.current_quantity - commitment.quantity
+                        'current_total': group.current_quantity
                     }
                 )
 
@@ -501,7 +586,10 @@ class GroupBuyingService(BaseService):
                     buyer_id=buyer.id
                 )
 
-                return ServiceResult.ok({"message": "Commitment cancelled successfully"})
+                return ServiceResult.ok({
+                    "message": "Commitment cancelled successfully",
+                    "refunded_quantity": commitment.quantity
+                })
 
         except GroupCommitment.DoesNotExist:
             return ServiceResult.fail(
@@ -513,6 +601,83 @@ class GroupBuyingService(BaseService):
             return ServiceResult.fail(
                 "Failed to cancel commitment",
                 error_code="CANCEL_FAILED"
+            )
+
+    def update_group_status(
+        self,
+        group_id: int,
+        new_status: str,
+        reason: Optional[str] = None
+    ) -> ServiceResult:
+        """
+        Update group status with WebSocket notification.
+
+        Args:
+            group_id: BuyingGroup ID
+            new_status: New status to set
+            reason: Optional reason for the change
+
+        Returns:
+            ServiceResult indicating success or failure
+        """
+        try:
+            group = BuyingGroup.objects.get(id=group_id)
+
+            old_status = group.status
+
+            # Validate status transition
+            valid_transitions = {
+                'open': ['active', 'failed', 'cancelled'],
+                'active': ['completed', 'cancelled'],
+                'failed': [],  # Terminal state
+                'completed': [],  # Terminal state
+                'cancelled': []  # Terminal state
+            }
+
+            if new_status not in valid_transitions.get(old_status, []):
+                return ServiceResult.fail(
+                    f"Invalid status transition from {old_status} to {new_status}",
+                    error_code="INVALID_TRANSITION"
+                )
+
+            group.status = new_status
+            group.save(update_fields=['status'])
+
+            # WEBSOCKET: Broadcast status change
+            broadcaster.broadcast_status_change(
+                group_id=group.id,
+                old_status=old_status,
+                new_status=new_status,
+                reason=reason
+            )
+
+            self.log_info(
+                f"Group status updated",
+                group_id=group_id,
+                old_status=old_status,
+                new_status=new_status
+            )
+
+            return ServiceResult.ok({
+                'group_id': group_id,
+                'old_status': old_status,
+                'new_status': new_status
+            })
+
+        except BuyingGroup.DoesNotExist:
+            return ServiceResult.fail(
+                "Group not found",
+                error_code="GROUP_NOT_FOUND"
+            )
+        except Exception as e:
+            self.log_error(
+                f"Error updating group status",
+                exception=e,
+                group_id=group_id
+            )
+            return ServiceResult.fail(
+                "Failed to update group status",
+                error_code="UPDATE_FAILED"
             )
 
     def process_expired_groups(self) -> Dict[str, Any]:
@@ -537,16 +702,34 @@ class GroupBuyingService(BaseService):
         for group in expired_groups:
             try:
                 with transaction.atomic():
+                    old_status = group.status
+
                     if group.current_quantity >= group.min_quantity:
                         # Group succeeded
                         group.status = 'active'
                         self._process_successful_group(group)
                         stats['successful'] += 1
+
+                        # WEBSOCKET: Broadcast success
+                        broadcaster.broadcast_status_change(
+                            group_id=group.id,
+                            old_status=old_status,
+                            new_status='active',
+                            reason='Minimum quantity reached at expiry'
+                        )
                     else:
                         # Group failed
                         group.status = 'failed'
                         self._process_failed_group(group)
                         stats['failed'] += 1
+
+                        # WEBSOCKET: Broadcast failure
+                        broadcaster.broadcast_status_change(
+                            group_id=group.id,
+                            old_status=old_status,
+                            new_status='failed',
+                            reason='Minimum quantity not reached'
+                        )
 
                     group.save(update_fields=['status'])
 
@@ -587,6 +770,12 @@ class GroupBuyingService(BaseService):
             group_id=group.id,
             quantity=group.current_quantity
         )
+
+        # TODO: Implement order creation
+        # from apps.orders.services.order_service import OrderService
+        # order_service = OrderService()
+        # for commitment in group.commitments.filter(status='pending'):
+        #     order_service.create_from_commitment(commitment)
 
     def _process_failed_group(self, group: BuyingGroup) -> None:
         """
