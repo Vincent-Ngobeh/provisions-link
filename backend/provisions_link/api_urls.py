@@ -44,7 +44,4 @@ urlpatterns = [
 
     # Custom integration endpoints
     path('integrations/', include('apps.integrations.urls')),
-
-    # Stripe webhooks (outside authentication)
-    path('webhooks/stripe/', include('apps.integrations.webhooks')),
 ]

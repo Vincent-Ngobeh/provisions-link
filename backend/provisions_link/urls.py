@@ -7,6 +7,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.http import JsonResponse
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
+from apps.integrations.views import stripe_webhook  # Add this import
 
 
 def home_view(request):
@@ -31,15 +32,13 @@ urlpatterns = [
     # API v1 endpoints
     path('api/v1/', include('provisions_link.api_urls')),
 
-    # API Documentation (using drf-spectacular)
+    # API Documentation
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
     path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'),
          name='swagger-ui'),
 
-    # Stripe Webhooks (outside API versioning)
-    path('webhooks/stripe/',
-         'apps.integrations.views.stripe_webhook',
-         name='stripe-webhook'),
+    # Stripe Webhooks (outside API versioning and auth)
+    path('webhooks/stripe/', stripe_webhook, name='stripe-webhook'),  # Fixed
 ]
 
 # Serve media files in development
