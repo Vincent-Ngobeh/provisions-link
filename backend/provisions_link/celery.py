@@ -7,6 +7,7 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE',
 
 app = Celery('provisions_link')
 app.config_from_object('django.conf:settings', namespace='CELERY')
+app.autodiscover_tasks(['apps.buying_groups', 'apps.vendors', 'apps.products'])
 app.autodiscover_tasks()
 
 
