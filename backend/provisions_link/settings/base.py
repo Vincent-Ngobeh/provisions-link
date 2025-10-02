@@ -4,8 +4,10 @@ Base Django settings for Provisions Link project.
 Contains all common settings used across all environments.
 Environment-specific settings should override these in their respective files.
 """
+from celery.schedules import crontab
 import os
 from pathlib import Path
+from datetime import timedelta
 
 
 # GDAL/GEOS Configuration (only needed for Windows)
@@ -50,9 +52,12 @@ DJANGO_APPS = [
 # Third-party applications
 THIRD_PARTY_APPS = [
     'rest_framework',
+    'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
     'channels',
     'corsheaders',
     'django_filters',
+    'drf_spectacular',
 ]
 
 # Project applications
@@ -103,17 +108,18 @@ TEMPLATES = [
 WSGI_APPLICATION = 'provisions_link.wsgi.application'
 ASGI_APPLICATION = 'provisions_link.asgi.application'
 
-# Channels Layer Configuration (ADD THIS SECTION)
+# Channels Layer Configuration
 CHANNEL_LAYERS = {
     'default': {
         'BACKEND': 'channels_redis.core.RedisChannelLayer',
         'CONFIG': {
             "hosts": [(os.environ.get('REDIS_HOST', '127.0.0.1'),
                       int(os.environ.get('REDIS_PORT', 6379)))],
+            "capacity": 1500,  # Maximum number of messages to store
+            "expiry": 10,  # Seconds
         },
     },
 }
-
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -166,7 +172,8 @@ FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
 # Django REST Framework configuration
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.SessionAuthentication',
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'rest_framework.authentication.SessionAuthentication',  # Keep for browsable API
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
@@ -180,10 +187,83 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
-        'rest_framework.renderers.BrowsableAPIRenderer',  # Nice for development
+        'rest_framework.renderers.BrowsableAPIRenderer',
     ],
     'DATETIME_FORMAT': '%Y-%m-%d %H:%M:%S',
-    'DEFAULT_SCHEMA_CLASS': 'rest_framework.schemas.coreapi.AutoSchema',
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+# JWT Authentication Settings
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'UPDATE_LAST_LOGIN': True,
+
+    'ALGORITHM': 'HS256',
+    'SIGNING_KEY': SECRET_KEY,
+    'VERIFYING_KEY': None,
+    'AUDIENCE': None,
+    'ISSUER': None,
+
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',
+    'USER_ID_FIELD': 'id',
+    'USER_ID_CLAIM': 'user_id',
+    'USER_AUTHENTICATION_RULE': 'rest_framework_simplejwt.authentication.default_user_authentication_rule',
+
+    'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
+    'TOKEN_TYPE_CLAIM': 'token_type',
+
+    'JTI_CLAIM': 'jti',
+
+    'SLIDING_TOKEN_REFRESH_EXP_CLAIM': 'refresh_exp',
+    'SLIDING_TOKEN_LIFETIME': timedelta(minutes=60),
+    'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=7),
+}
+
+# API Documentation Settings
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Provisions Link API',
+    'DESCRIPTION': 'B2B Marketplace for UK Food & Beverage Suppliers',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'SWAGGER_UI_SETTINGS': {
+        'deepLinking': True,
+        'persistAuthorization': True,
+        'displayOperationId': True,
+    },
+    'COMPONENT_SPLIT_REQUEST': True,
+    'SCHEMA_PATH_PREFIX': '/api/v1/',
+}
+
+# Service Configuration
+SERVICE_CACHE_TIMEOUT = 3600  # 1 hour default cache timeout for services
+
+# External API Keys
+MAPBOX_API_TOKEN = os.getenv('MAPBOX_API_TOKEN', '')
+
+# FSA API Configuration
+FSA_API_BASE_URL = 'https://api.ratings.food.gov.uk'
+FSA_API_VERSION = '2'
+
+# Celery Configuration for Periodic Tasks
+
+CELERY_BEAT_SCHEDULE = {
+    'update-fsa-ratings-weekly': {
+        'task': 'bulk_update_fsa_ratings',
+        # Every Monday at 2 AM
+        'schedule': crontab(hour=2, minute=0, day_of_week=1),
+    },
+    'process-expired-groups-hourly': {
+        'task': 'process_expired_buying_groups',
+        'schedule': crontab(minute=0),  # Every hour
+    },
+    'check-low-stock-daily': {
+        'task': 'check_low_stock_products',
+        'schedule': crontab(hour=9, minute=0),  # Every day at 9 AM
+    },
 }
 
 # Logging configuration
