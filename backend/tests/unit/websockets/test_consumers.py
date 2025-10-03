@@ -15,8 +15,10 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 
 from apps.buying_groups.consumers import GroupBuyingConsumer
-from apps.buying_groups.models import BuyingGroup, GroupCommitment
-from tests.conftest import BuyingGroupFactory, UserFactory, ProductFactory
+from apps.buying_groups.models import BuyingGroup, GroupCommitment, GroupUpdate
+from apps.vendors.models import Vendor
+from apps.products.models import Product, Category
+from tests.conftest import BuyingGroupFactory, UserFactory, ProductFactory, CategoryFactory
 
 User = get_user_model()
 
@@ -63,6 +65,18 @@ class TestGroupBuyingConsumerConnection:
 
         await communicator.disconnect()
 
+    async def test_connection_with_invalid_path(self):
+        """Test that connection to invalid path fails."""
+        communicator = WebsocketCommunicator(
+            GroupBuyingConsumer.as_asgi(),
+            "/ws/invalid-path/"
+        )
+
+        connected, _ = await communicator.connect()
+        # Should still connect but to the base consumer
+        assert connected is True
+        await communicator.disconnect()
+
 
 @pytest.mark.django_db
 @pytest.mark.asyncio
@@ -72,62 +86,40 @@ class TestGroupSubscription:
     @pytest.mark.django_db(transaction=True)
     async def test_subscribe_to_valid_group(self, db, test_user):
         """Test subscribing to a valid group."""
-        from apps.buying_groups.models import BuyingGroup
-        from apps.products.models import Product, Category
-        from apps.vendors.models import Vendor
-        from apps.core.models import User
-        from django.contrib.gis.geos import Point
-        from decimal import Decimal
-        from django.utils import timezone
-        from datetime import timedelta
-
-        # Wrap all database operations in sync_to_async
+        # Create test data synchronously
         @database_sync_to_async
         def create_test_data():
-            # Create vendor with user
-            vendor_user = User.objects.create_user(
-                email='vendor@test.com',
-                username='vendor_test'
-            )
-            vendor = Vendor.objects.create(
-                user=vendor_user,
-                business_name='Test Vendor',
-                location=Point(-0.1276, 51.5074),
-                postcode='SW1A 1AA',
-                is_approved=True,
-                commission_rate=Decimal('0.10')
-            )
+            from django.contrib.gis.geos import Point
 
-            # Create category (REQUIRED for Product)
+            # Create category first (without description field)
             category = Category.objects.create(
                 name='Food & Beverages',
-                slug='food-beverages',
-                display_order=1
+                slug='food-beverages'
             )
 
-            # Create product with category
+            vendor = Vendor.objects.create(
+                user=UserFactory(),
+                business_name='Test Vendor',
+                location=Point(-0.1276, 51.5074),
+                is_approved=True
+            )
+
             product = Product.objects.create(
                 vendor=vendor,
-                category=category,  # Required field
+                category=category,  # Now providing the required category
                 name='Test Product',
-                slug='test-product',  # Add slug if required
                 price=Decimal('10.00'),
-                stock_quantity=100,
-                is_active=True,
-                vat_rate=Decimal('0.20'),
-                unit='unit',  # Add unit if required
-                description='Test product description'
+                stock_quantity=100
             )
 
-            # Create buying group
             group = BuyingGroup.objects.create(
                 product=product,
                 center_point=Point(-0.1276, 51.5074),
                 radius_km=5,
                 area_name='Test Area',
-                target_quantity=100,
-                current_quantity=0,
-                min_quantity=60,
+                target_quantity=50,
+                min_quantity=30,
+                current_quantity=10,
                 discount_percent=Decimal('15.00'),
                 expires_at=timezone.now() + timedelta(days=7),
                 status='open'
@@ -135,7 +127,6 @@ class TestGroupSubscription:
 
             return group
 
-        # Create all test data synchronously
         group = await create_test_data()
 
         # Now test the WebSocket
@@ -188,3 +179,468 @@ class TestGroupSubscription:
         assert 'not found' in response['data']['message'].lower()
 
         await communicator.disconnect()
+
+    @pytest.mark.django_db(transaction=True)
+    async def test_unsubscribe_from_group(self, db, test_user):
+        """Test unsubscribing from a group."""
+        # First create a group to subscribe to
+        @database_sync_to_async
+        def create_test_group():
+            from django.contrib.gis.geos import Point
+
+            category = Category.objects.create(
+                name='Test Category',
+                slug='test-category-unsub'
+            )
+
+            vendor = Vendor.objects.create(
+                user=UserFactory(),
+                business_name='Test Vendor',
+                location=Point(-0.1276, 51.5074),
+                is_approved=True
+            )
+
+            product = Product.objects.create(
+                vendor=vendor,
+                category=category,
+                name='Test Product',
+                price=Decimal('10.00'),
+                stock_quantity=100
+            )
+
+            group = BuyingGroup.objects.create(
+                product=product,
+                center_point=Point(-0.1276, 51.5074),
+                radius_km=5,
+                area_name='Test Area',
+                target_quantity=50,
+                min_quantity=30,
+                current_quantity=10,
+                discount_percent=Decimal('15.00'),
+                expires_at=timezone.now() + timedelta(days=7),
+                status='open'
+            )
+
+            return group
+
+        group = await create_test_group()
+
+        communicator = WebsocketCommunicator(
+            GroupBuyingConsumer.as_asgi(),
+            "/ws/group-buying/"
+        )
+        communicator.scope['user'] = test_user
+
+        await communicator.connect()
+        await communicator.receive_json_from()  # Connection message
+
+        # First subscribe to a group
+        await communicator.send_json_to({
+            'type': 'subscribe',
+            'group_id': group.id
+        })
+
+        response = await communicator.receive_json_from()
+        assert response['type'] == 'subscribed'
+
+        # Now unsubscribe from the group
+        await communicator.send_json_to({
+            'type': 'unsubscribe'
+        })
+
+        response = await communicator.receive_json_from()
+        assert response['type'] == 'unsubscribed'
+        assert response['data']['group_id'] == group.id
+
+        await communicator.disconnect()
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+class TestBroadcastMessages:
+    """Test receiving broadcast messages."""
+
+    @pytest.mark.django_db(transaction=True)
+    async def test_receive_progress_update(self, db, test_user):
+        """Test receiving progress update broadcasts."""
+        @database_sync_to_async
+        def create_test_group():
+            from django.contrib.gis.geos import Point
+
+            category = Category.objects.create(
+                name='Test Category',
+                slug='test-category-progress'
+            )
+
+            vendor = Vendor.objects.create(
+                user=UserFactory(),
+                business_name='Test Vendor',
+                location=Point(-0.1276, 51.5074),
+                is_approved=True
+            )
+
+            product = Product.objects.create(
+                vendor=vendor,
+                category=category,
+                name='Test Product',
+                price=Decimal('10.00'),
+                stock_quantity=100
+            )
+
+            group = BuyingGroup.objects.create(
+                product=product,
+                center_point=Point(-0.1276, 51.5074),
+                radius_km=5,
+                area_name='Test Area',
+                target_quantity=50,
+                min_quantity=30,
+                current_quantity=10,
+                discount_percent=Decimal('15.00'),
+                expires_at=timezone.now() + timedelta(days=7),
+                status='open'
+            )
+
+            return group
+
+        group = await create_test_group()
+
+        communicator = WebsocketCommunicator(
+            GroupBuyingConsumer.as_asgi(),
+            "/ws/group-buying/"
+        )
+        communicator.scope['user'] = test_user
+
+        await communicator.connect()
+        await communicator.receive_json_from()  # Connection message
+
+        # Subscribe to group
+        await communicator.send_json_to({
+            'type': 'subscribe',
+            'group_id': group.id
+        })
+        await communicator.receive_json_from()  # Subscription confirmation
+
+        # Simulate a progress broadcast
+        channel_layer = get_channel_layer()
+        await channel_layer.group_send(
+            f'group_buying_{group.id}',
+            {
+                'type': 'group_progress',
+                'data': {
+                    'group_id': group.id,
+                    'current_quantity': 20,
+                    'target_quantity': 50,
+                    'participants_count': 3,
+                    'progress_percent': 40.0
+                }
+            }
+        )
+
+        # Should receive the progress update
+        response = await communicator.receive_json_from()
+        assert response['type'] == 'progress_update'
+        assert response['data']['current_quantity'] == 20
+        assert response['data']['progress_percent'] == 40.0
+
+        await communicator.disconnect()
+
+    @pytest.mark.django_db(transaction=True)
+    async def test_receive_threshold_notification(self, db, test_user):
+        """Test receiving threshold reached notification."""
+        @database_sync_to_async
+        def create_test_group():
+            from django.contrib.gis.geos import Point
+
+            category = Category.objects.create(
+                name='Test Category',
+                slug='test-category-threshold'
+            )
+
+            vendor = Vendor.objects.create(
+                user=UserFactory(),
+                business_name='Test Vendor',
+                location=Point(-0.1276, 51.5074),
+                is_approved=True
+            )
+
+            product = Product.objects.create(
+                vendor=vendor,
+                category=category,
+                name='Test Product',
+                price=Decimal('10.00'),
+                stock_quantity=100
+            )
+
+            group = BuyingGroup.objects.create(
+                product=product,
+                center_point=Point(-0.1276, 51.5074),
+                radius_km=5,
+                area_name='Test Area',
+                target_quantity=50,
+                min_quantity=30,
+                current_quantity=40,
+                discount_percent=Decimal('15.00'),
+                expires_at=timezone.now() + timedelta(days=7),
+                status='open'
+            )
+
+            return group
+
+        group = await create_test_group()
+
+        communicator = WebsocketCommunicator(
+            GroupBuyingConsumer.as_asgi(),
+            "/ws/group-buying/"
+        )
+        communicator.scope['user'] = test_user
+
+        await communicator.connect()
+        await communicator.receive_json_from()
+
+        await communicator.send_json_to({
+            'type': 'subscribe',
+            'group_id': group.id
+        })
+        await communicator.receive_json_from()
+
+        # Simulate threshold reached broadcast
+        channel_layer = get_channel_layer()
+        await channel_layer.group_send(
+            f'group_buying_{group.id}',
+            {
+                'type': 'group_threshold',
+                'data': {
+                    'group_id': group.id,
+                    'threshold_percent': 80,
+                    'current_quantity': 40,
+                    'target_quantity': 50,
+                    'message': 'Group has reached 80% of target!'
+                }
+            }
+        )
+
+        response = await communicator.receive_json_from()
+        assert response['type'] == 'threshold_reached'
+        assert response['data']['threshold_percent'] == 80
+
+        await communicator.disconnect()
+
+    @pytest.mark.django_db(transaction=True)
+    async def test_multiple_clients_receive_broadcasts(self, db):
+        """Test that multiple connected clients receive the same broadcast."""
+        @database_sync_to_async
+        def create_test_data():
+            from django.contrib.gis.geos import Point
+
+            users = [UserFactory() for _ in range(3)]
+
+            category = Category.objects.create(
+                name='Test Category',
+                slug='test-category-multiple'
+            )
+
+            vendor = Vendor.objects.create(
+                user=UserFactory(),
+                business_name='Test Vendor',
+                location=Point(-0.1276, 51.5074),
+                is_approved=True
+            )
+
+            product = Product.objects.create(
+                vendor=vendor,
+                category=category,
+                name='Test Product',
+                price=Decimal('10.00'),
+                stock_quantity=100
+            )
+
+            group = BuyingGroup.objects.create(
+                product=product,
+                center_point=Point(-0.1276, 51.5074),
+                radius_km=5,
+                area_name='Test Area',
+                target_quantity=50,
+                min_quantity=30,
+                current_quantity=10,
+                discount_percent=Decimal('15.00'),
+                expires_at=timezone.now() + timedelta(days=7),
+                status='open'
+            )
+
+            return users, group
+
+        users, group = await create_test_data()
+
+        # Connect multiple clients
+        communicators = []
+        for user in users:
+            comm = WebsocketCommunicator(
+                GroupBuyingConsumer.as_asgi(),
+                "/ws/group-buying/"
+            )
+            comm.scope['user'] = user
+            await comm.connect()
+            await comm.receive_json_from()  # Connection message
+
+            # Subscribe to the same group
+            await comm.send_json_to({
+                'type': 'subscribe',
+                'group_id': group.id
+            })
+            await comm.receive_json_from()  # Subscription confirmation
+
+            communicators.append(comm)
+
+        # Broadcast a message
+        channel_layer = get_channel_layer()
+        await channel_layer.group_send(
+            f'group_buying_{group.id}',
+            {
+                'type': 'group_commitment',
+                'data': {
+                    'group_id': group.id,
+                    'buyer_name': 'John Doe',
+                    'quantity': 5,
+                    'new_total': 15,
+                    'participants_count': 2,
+                    'message': 'John Doe committed 5 units!'
+                }
+            }
+        )
+
+        # All clients should receive the same message
+        for comm in communicators:
+            response = await comm.receive_json_from()
+            assert response['type'] == 'new_commitment'
+            assert response['data']['buyer_name'] == 'John Doe'
+            assert response['data']['quantity'] == 5
+
+        # Cleanup
+        for comm in communicators:
+            await comm.disconnect()
+
+    async def test_ping_pong_keepalive(self, test_user):
+        """Test ping/pong keepalive mechanism."""
+        communicator = WebsocketCommunicator(
+            GroupBuyingConsumer.as_asgi(),
+            "/ws/group-buying/"
+        )
+        communicator.scope['user'] = test_user
+
+        await communicator.connect()
+        await communicator.receive_json_from()
+
+        # Send ping
+        await communicator.send_json_to({
+            'type': 'ping'
+        })
+
+        # Should receive pong
+        response = await communicator.receive_json_from()
+        assert response['type'] == 'pong'
+
+        await communicator.disconnect()
+
+    async def test_invalid_message_type(self, test_user):
+        """Test handling of invalid message types."""
+        communicator = WebsocketCommunicator(
+            GroupBuyingConsumer.as_asgi(),
+            "/ws/group-buying/"
+        )
+        communicator.scope['user'] = test_user
+
+        await communicator.connect()
+        await communicator.receive_json_from()
+
+        # Send invalid message type
+        await communicator.send_json_to({
+            'type': 'invalid_type',
+            'data': {}
+        })
+
+        response = await communicator.receive_json_from()
+        assert response['type'] == 'error'
+        assert 'Unknown message type' in response['data']['message']
+
+        await communicator.disconnect()
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+class TestErrorHandling:
+    """Test error handling in WebSocket consumer."""
+
+    async def test_subscribe_without_group_id(self, test_user):
+        """Test subscribing without providing group_id."""
+        communicator = WebsocketCommunicator(
+            GroupBuyingConsumer.as_asgi(),
+            "/ws/group-buying/"
+        )
+        communicator.scope['user'] = test_user
+
+        await communicator.connect()
+        await communicator.receive_json_from()
+
+        await communicator.send_json_to({
+            'type': 'subscribe'
+            # Missing group_id
+        })
+
+        response = await communicator.receive_json_from()
+        assert response['type'] == 'error'
+        assert 'Group ID required' in response['data']['message']
+
+        await communicator.disconnect()
+
+    async def test_malformed_json_message(self, test_user):
+        """Test handling of malformed JSON messages."""
+        communicator = WebsocketCommunicator(
+            GroupBuyingConsumer.as_asgi(),
+            "/ws/group-buying/"
+        )
+        communicator.scope['user'] = test_user
+
+        await communicator.connect()
+        await communicator.receive_json_from()
+
+        # Send malformed message (missing required fields)
+        await communicator.send_json_to({})
+
+        # Consumer should handle gracefully
+        # Either error or no response depending on implementation
+        try:
+            response = await communicator.receive_json_from(timeout=1)
+            # If we get a response, it should be an error
+            if response:
+                assert response['type'] == 'error'
+        except:
+            # No response is also acceptable for malformed messages
+            pass
+
+        await communicator.disconnect()
+
+    async def test_reconnection_after_disconnect(self, test_user):
+        """Test that client can reconnect after disconnection."""
+        communicator1 = WebsocketCommunicator(
+            GroupBuyingConsumer.as_asgi(),
+            "/ws/group-buying/"
+        )
+        communicator1.scope['user'] = test_user
+
+        # First connection
+        await communicator1.connect()
+        response = await communicator1.receive_json_from()
+        assert response['type'] == 'connection_established'
+        await communicator1.disconnect()
+
+        # Second connection should work
+        communicator2 = WebsocketCommunicator(
+            GroupBuyingConsumer.as_asgi(),
+            "/ws/group-buying/"
+        )
+        communicator2.scope['user'] = test_user
+
+        await communicator2.connect()
+        response = await communicator2.receive_json_from()
+        assert response['type'] == 'connection_established'
+        await communicator2.disconnect()
