@@ -4,11 +4,17 @@ Base Django settings for Provisions Link project.
 Contains all common settings used across all environments.
 Environment-specific settings should override these in their respective files.
 """
-from celery.schedules import crontab
 import os
 from pathlib import Path
 from datetime import timedelta
+from celery.schedules import crontab
+from dotenv import load_dotenv
 
+# Load environment variables
+load_dotenv()
+
+# Project root directory (three levels up from this file)
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 # GDAL/GEOS Configuration (only needed for Windows)
 if os.name == 'nt':  # Windows only
@@ -24,14 +30,6 @@ if os.name == 'nt':  # Windows only
     osgeo_bin = r'C:\Users\Vince\AppData\Local\Programs\OSGeo4W\bin'
     if osgeo_bin not in os.environ.get('PATH', ''):
         os.environ['PATH'] = osgeo_bin + ';' + os.environ['PATH']
-
-
-from dotenv import load_dotenv
-load_dotenv()
-
-
-# Project root directory (three levels up from this file)
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 # Security
 SECRET_KEY = os.environ.get('SECRET_KEY')
@@ -148,7 +146,7 @@ STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_DIRS = [
     BASE_DIR / 'static',
-]
+] if (BASE_DIR / 'static').exists() else []
 
 # Media files configuration
 MEDIA_URL = '/media/'
@@ -173,7 +171,7 @@ FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
-        'rest_framework.authentication.SessionAuthentication',  # Keep for browsable API
+        'rest_framework.authentication.SessionAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
@@ -189,17 +187,23 @@ REST_FRAMEWORK = {
         'rest_framework.renderers.JSONRenderer',
         'rest_framework.renderers.BrowsableAPIRenderer',
     ],
-    'DATETIME_FORMAT': '%Y-%m-%d %H:%M:%S',
-    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '100/hour',
+        'user': '1000/hour',
+    },
 }
 
-# JWT Authentication Settings
+# JWT Authentication configuration
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
-    'UPDATE_LAST_LOGIN': True,
+    'UPDATE_LAST_LOGIN': False,
 
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,
@@ -211,7 +215,6 @@ SIMPLE_JWT = {
     'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',
     'USER_ID_FIELD': 'id',
     'USER_ID_CLAIM': 'user_id',
-    'USER_AUTHENTICATION_RULE': 'rest_framework_simplejwt.authentication.default_user_authentication_rule',
 
     'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
     'TOKEN_TYPE_CLAIM': 'token_type',
@@ -223,10 +226,10 @@ SIMPLE_JWT = {
     'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=7),
 }
 
-# API Documentation Settings
+# drf-spectacular settings for API documentation
 SPECTACULAR_SETTINGS = {
     'TITLE': 'Provisions Link API',
-    'DESCRIPTION': 'B2B Marketplace for UK Food & Beverage Suppliers',
+    'DESCRIPTION': 'B2B Marketplace for UK Food & Beverage Industry',
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
     'SWAGGER_UI_SETTINGS': {
@@ -249,24 +252,65 @@ FSA_API_BASE_URL = 'https://api.ratings.food.gov.uk'
 FSA_API_VERSION = '2'
 
 # Celery Configuration for Periodic Tasks
-
 CELERY_BEAT_SCHEDULE = {
-    'update-fsa-ratings-weekly': {
-        'task': 'bulk_update_fsa_ratings',
-        # Every Monday at 2 AM
-        'schedule': crontab(hour=2, minute=0, day_of_week=1),
-    },
+    # Buying Groups Tasks
     'process-expired-groups-hourly': {
         'task': 'process_expired_buying_groups',
         'schedule': crontab(minute=0),  # Every hour
     },
+    'check-group-thresholds-every-30-min': {
+        'task': 'check_group_thresholds',
+        'schedule': crontab(minute='*/30'),  # Every 30 minutes
+    },
+    'notify-expiring-groups-every-6-hours': {
+        'task': 'notify_expiring_groups',
+        'schedule': crontab(minute=0, hour='*/6'),  # Every 6 hours
+    },
+    'cleanup-old-group-updates-weekly': {
+        'task': 'cleanup_old_group_updates',
+        'schedule': crontab(hour=3, minute=0, day_of_week=0),  # Sunday 3 AM
+    },
+
+    # Vendor Tasks
+    'update-fsa-ratings-weekly': {
+        'task': 'bulk_update_fsa_ratings',
+        'schedule': crontab(hour=2, minute=0, day_of_week=1),  # Monday 2 AM
+    },
+    'check-vendor-compliance-daily': {
+        'task': 'check_vendor_compliance',
+        'schedule': crontab(hour=1, minute=0),  # Daily at 1 AM
+    },
+    'update-vendor-commission-monthly': {
+        'task': 'update_vendor_commission_rates',
+        # First day of month
+        'schedule': crontab(hour=0, minute=0, day_of_month=1),
+    },
+
+    # Product Tasks
     'check-low-stock-daily': {
         'task': 'check_low_stock_products',
-        'schedule': crontab(hour=9, minute=0),  # Every day at 9 AM
+        'schedule': crontab(hour=9, minute=0),  # Daily at 9 AM
+    },
+    'update-search-vectors-weekly': {
+        'task': 'update_search_vectors',
+        'schedule': crontab(hour=4, minute=0, day_of_week=0),  # Sunday 4 AM
+    },
+    'calculate-product-analytics-weekly': {
+        'task': 'calculate_product_analytics',
+        'schedule': crontab(hour=5, minute=0, day_of_week=0),  # Sunday 5 AM
+    },
+    'update-featured-products-weekly': {
+        'task': 'update_featured_products',
+        'schedule': crontab(hour=6, minute=0, day_of_week=1),  # Monday 6 AM
+    },
+    'cleanup-abandoned-products-monthly': {
+        'task': 'cleanup_abandoned_products',
+        # 15th of month
+        'schedule': crontab(hour=2, minute=0, day_of_month=15),
     },
 }
 
-# Logging configuration
+# Logging configuration - Base (Console only by default)
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -280,8 +324,17 @@ LOGGING = {
             'style': '{',
         },
     },
+    'filters': {
+        'require_debug_false': {
+            '()': 'django.utils.log.RequireDebugFalse',
+        },
+        'require_debug_true': {
+            '()': 'django.utils.log.RequireDebugTrue',
+        },
+    },
     'handlers': {
         'console': {
+            'level': 'INFO',
             'class': 'logging.StreamHandler',
             'formatter': 'simple',
         },
@@ -296,5 +349,40 @@ LOGGING = {
             'level': os.getenv('DJANGO_LOG_LEVEL', 'INFO'),
             'propagate': False,
         },
+        'django.server': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'apps': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        'provisions_link': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        'provisions_link.requests': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'celery': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
     },
 }
+
+# Request logging settings (for custom middleware)
+REQUEST_LOGGING_ENABLED = os.getenv(
+    'REQUEST_LOGGING_ENABLED', 'False').lower() == 'true'
+REQUEST_LOGGING_LEVEL = 'INFO'
+REQUEST_LOGGING_INCLUDE_RESPONSE_BODY = False
+
+# Rate limiting settings (for custom middleware)
+RATE_LIMITING_ENABLED = os.getenv(
+    'RATE_LIMITING_ENABLED', 'False').lower() == 'true'
