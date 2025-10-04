@@ -6,6 +6,7 @@ from celery import shared_task
 from django.utils import timezone
 from django.db import transaction
 from django.db.models import Q
+from datetime import timedelta
 import logging
 
 logger = logging.getLogger(__name__)
@@ -41,7 +42,12 @@ def process_expired_buying_groups():
             f"Failed: {stats['failed']}"
         )
 
-        return stats
+        # Return with consistent key naming matching what tests expect
+        return {
+            'processed': stats['total_processed'],
+            'successful': stats['successful'],
+            'failed': stats['failed']
+        }
 
     except Exception as e:
         logger.error(f"Error processing expired groups: {str(e)}")
@@ -105,7 +111,26 @@ def check_group_thresholds():
                 event_type='threshold'
             ).values_list('event_data', flat=True)
 
-            # Check 50% threshold
+            # FIXED: Check 80% threshold FIRST (higher thresholds first)
+            # This ensures both thresholds can be triggered independently
+            if progress >= 80 and not any('80%' in str(update) for update in existing_threshold_updates):
+                broadcaster.broadcast_threshold_reached(
+                    group_id=group.id,
+                    threshold_percent=80,
+                    current_quantity=group.current_quantity,
+                    target_quantity=group.target_quantity
+                )
+
+                GroupUpdate.objects.create(
+                    group=group,
+                    event_type='threshold',
+                    event_data={'milestone': '80%',
+                                'quantity': group.current_quantity}
+                )
+
+                logger.info(f"Group {group.id} reached 80% threshold")
+
+            # Check 50% threshold (separate if, not elif)
             if progress >= 50 and not any('50%' in str(update) for update in existing_threshold_updates):
                 broadcaster.broadcast_threshold_reached(
                     group_id=group.id,
@@ -123,26 +148,49 @@ def check_group_thresholds():
 
                 logger.info(f"Group {group.id} reached 50% threshold")
 
-            # Check 80% threshold
-            elif progress >= 80 and not any('80%' in str(update) for update in existing_threshold_updates):
-                broadcaster.broadcast_threshold_reached(
-                    group_id=group.id,
-                    threshold_percent=80,
-                    current_quantity=group.current_quantity,
-                    target_quantity=group.target_quantity
-                )
-
-                GroupUpdate.objects.create(
-                    group=group,
-                    event_type='threshold',
-                    event_data={'milestone': '80%',
-                                'quantity': group.current_quantity}
-                )
-
-                logger.info(f"Group {group.id} reached 80% threshold")
-
     except Exception as e:
         logger.error(f"Error checking group thresholds: {str(e)}")
+        raise
+
+
+@shared_task(name='notify_expiring_groups')
+def notify_expiring_groups():
+    """
+    Send notifications for groups expiring within 24 hours.
+    Runs every 6 hours via Celery Beat.
+    """
+    from apps.buying_groups.models import BuyingGroup
+    from apps.core.utils.websocket_utils import broadcaster
+
+    try:
+        # Find groups expiring in the next 24 hours
+        now = timezone.now()
+        expiring_soon = now + timedelta(hours=24)
+
+        expiring_groups = BuyingGroup.objects.filter(
+            status='open',
+            expires_at__gt=now,
+            expires_at__lte=expiring_soon
+        )
+
+        count = 0
+        for group in expiring_groups:
+            # Only notify if there are commitments
+            if group.commitments.filter(status='pending').exists():
+                broadcaster.broadcast_status_change(
+                    group_id=group.id,
+                    old_status='open',
+                    new_status='open',
+                    reason='Group expires in less than 24 hours!'
+                )
+                count += 1
+
+                logger.info(f"Notified group {group.id} - expiring soon")
+
+        return {'groups_expiring': count}
+
+    except Exception as e:
+        logger.error(f"Error notifying expiring groups: {str(e)}")
         raise
 
 
@@ -154,66 +202,19 @@ def cleanup_old_group_updates():
     Runs weekly.
     """
     from apps.buying_groups.models import GroupUpdate
-    from datetime import timedelta
 
     try:
+        # Delete updates older than 30 days
         cutoff_date = timezone.now() - timedelta(days=30)
+        old_updates = GroupUpdate.objects.filter(created_at__lt=cutoff_date)
 
-        deleted_count = GroupUpdate.objects.filter(
-            created_at__lt=cutoff_date
-        ).delete()[0]
+        count = old_updates.count()
+        old_updates.delete()
 
-        logger.info(f"Deleted {deleted_count} old group updates")
+        logger.info(f"Deleted {count} old group updates")
 
-        return {'deleted': deleted_count}
+        return {'deleted': count}
 
     except Exception as e:
         logger.error(f"Error cleaning up group updates: {str(e)}")
-        raise
-
-
-@shared_task(name='notify_expiring_groups')
-def notify_expiring_groups():
-    """
-    Notify participants of groups expiring in the next 24 hours.
-    Runs every 6 hours.
-    """
-    from apps.buying_groups.models import BuyingGroup
-    from datetime import timedelta
-
-    try:
-        # Find groups expiring in next 24 hours
-        now = timezone.now()
-        expiring_soon = BuyingGroup.objects.filter(
-            status='open',
-            expires_at__gt=now,
-            expires_at__lte=now + timedelta(hours=24)
-        )
-
-        for group in expiring_soon:
-            # Get unique participants
-            participants = group.commitments.filter(
-                status='pending'
-            ).values_list('buyer_id', flat=True).distinct()
-
-            # In production, send email notifications here
-            # For now, just log
-            logger.info(
-                f"Group {group.id} expiring soon - "
-                f"would notify {participants.count()} participants"
-            )
-
-            # Could also send WebSocket notification
-            from apps.core.utils.websocket_utils import broadcaster
-            broadcaster.broadcast_status_change(
-                group_id=group.id,
-                old_status='open',
-                new_status='open',
-                reason=f'Group expires in less than 24 hours!'
-            )
-
-        return {'groups_expiring': expiring_soon.count()}
-
-    except Exception as e:
-        logger.error(f"Error notifying expiring groups: {str(e)}")
         raise
