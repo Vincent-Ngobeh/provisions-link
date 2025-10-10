@@ -6,7 +6,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
-from django.db.models import Count, Avg
+from django.db.models import Count, Avg, Q
 from django.utils import timezone
 
 from .models import Vendor
@@ -59,15 +59,19 @@ class VendorViewSet(viewsets.ModelViewSet):
         """
         Optionally filter vendors by location or other criteria.
         """
-        queryset = super().get_queryset()
+        # For approve action, allow access to unapproved vendors
+        if self.action == 'approve':
+            queryset = Vendor.objects.all()
+        else:
+            queryset = Vendor.objects.filter(is_approved=True)
 
         # Add annotations for list view
         if self.action == 'list':
             queryset = queryset.annotate(
                 products_count=Count(
-                    'products', filter=models.Q(products__is_active=True)),
+                    'products', filter=Q(products__is_active=True)),
                 active_groups_count=Count('products__buying_groups',
-                                          filter=models.Q(products__buying_groups__status='open'))
+                                          filter=Q(products__buying_groups__status='open'))
             )
 
         # Location-based filtering
@@ -163,6 +167,15 @@ class VendorViewSet(viewsets.ModelViewSet):
 
         vendor = self.get_object()
         commission_rate = request.data.get('commission_rate')
+
+        if commission_rate is not None:
+            try:
+                from decimal import Decimal
+                commission_rate = Decimal(str(commission_rate))
+            except (ValueError, TypeError):
+                return Response({
+                    'error': 'Invalid commission rate format'
+                }, status=status.HTTP_400_BAD_REQUEST)
 
         result = self.service.approve_vendor(
             vendor_id=vendor.id,

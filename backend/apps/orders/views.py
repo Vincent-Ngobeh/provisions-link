@@ -6,6 +6,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import ValidationError
 from django.db.models import Q, Sum, Count
 from django.utils import timezone
 from datetime import datetime, timedelta
@@ -82,17 +83,27 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         return queryset.order_by('-created_at')
 
+    def create(self, request, *args, **kwargs):
+        """Override create to use different serializers for input/output."""
+        # Use OrderCreateSerializer for validation
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+
+        # Use OrderDetailSerializer for the response
+        output_serializer = OrderDetailSerializer(serializer.instance)
+        headers = self.get_success_headers(output_serializer.data)
+        return Response(output_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
     def perform_create(self, serializer):
         """Create order using service layer."""
-        items = serializer.validated_data.pop('items', [])
-
-        # Prepare items data for service
+        # Don't pop items - keep them for serializer
         items_data = [
             {
                 'product_id': item['product'].id,
                 'quantity': item['quantity']
             }
-            for item in items
+            for item in serializer.validated_data.get('items', [])
         ]
 
         result = self.service.create_order(
@@ -106,11 +117,13 @@ class OrderViewSet(viewsets.ModelViewSet):
         )
 
         if not result.success:
-            return Response({
+            # Raise validation error instead of returning Response
+            raise ValidationError({
                 'error': result.error,
                 'error_code': result.error_code
-            }, status=status.HTTP_400_BAD_REQUEST)
+            })
 
+        # Set the created order as the serializer instance
         serializer.instance = result.data
 
     @action(detail=True, methods=['post'])
@@ -128,6 +141,24 @@ class OrderViewSet(viewsets.ModelViewSet):
                 'error': 'status field is required'
             }, status=status.HTTP_400_BAD_REQUEST)
 
+        # CHECK PERMISSIONS FIRST - before calling service
+        # Buyers can only cancel pending orders
+        if order.buyer == request.user:
+            if order.status != 'pending' or new_status != 'cancelled':
+                return Response({
+                    'error': 'You can only cancel pending orders'
+                }, status=status.HTTP_403_FORBIDDEN)
+        # Vendors can update their own orders
+        elif hasattr(request.user, 'vendor') and order.vendor == request.user.vendor:
+            pass  # Allowed
+        # Staff can update any order
+        elif request.user.is_staff:
+            pass  # Allowed
+        else:
+            return Response({
+                'error': 'You don\'t have permission to update this order'
+            }, status=status.HTTP_403_FORBIDDEN)
+
         result = self.service.update_order_status(
             order_id=order.id,
             new_status=new_status,
@@ -136,9 +167,10 @@ class OrderViewSet(viewsets.ModelViewSet):
         )
 
         if result.success:
+            order.refresh_from_db()
             return Response({
                 'message': f'Order status updated to {new_status}',
-                'order': OrderDetailSerializer(order.refresh_from_db()).data
+                'order': OrderDetailSerializer(order).data
             })
 
         return Response({

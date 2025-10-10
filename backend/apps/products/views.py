@@ -6,6 +6,7 @@ from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.pagination import PageNumberPagination
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Q, Prefetch
 
@@ -24,6 +25,13 @@ from .services.product_service import ProductService
 from apps.buying_groups.models import BuyingGroup
 
 
+class ProductPagination(PageNumberPagination):
+    """Custom pagination for products."""
+    page_size = 20
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+
 class ProductViewSet(viewsets.ModelViewSet):
     """
     ViewSet for product operations.
@@ -31,6 +39,7 @@ class ProductViewSet(viewsets.ModelViewSet):
     """
     queryset = Product.objects.filter(is_active=True)
     serializer_class = ProductListSerializer
+    pagination_class = ProductPagination
     filter_backends = [DjangoFilterBackend,
                        filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'description', 'sku']
@@ -71,6 +80,19 @@ class ProductViewSet(viewsets.ModelViewSet):
             )
         )
 
+        # For update/delete actions, filter by vendor ownership
+        if self.action in ['update', 'partial_update', 'destroy']:
+            if self.request.user.is_authenticated:
+                if hasattr(self.request.user, 'vendor'):
+                    # Vendor can only update/delete their own products
+                    queryset = queryset.filter(vendor=self.request.user.vendor)
+                elif not self.request.user.is_staff:
+                    # Non-vendor, non-staff users cannot update/delete
+                    queryset = queryset.none()
+                # Staff can access all products (no additional filter)
+            else:
+                queryset = queryset.none()
+
         # Filter by vendor if specified
         vendor_id = self.request.query_params.get('vendor')
         if vendor_id:
@@ -93,15 +115,33 @@ class ProductViewSet(viewsets.ModelViewSet):
         """Create product using service layer."""
         vendor = self.request.user.vendor  # User must have vendor account
 
+        # Extract validated data
+        data = serializer.validated_data.copy()
+
+        # Transform category FK to category_id
+        if 'category' in data:
+            data['category_id'] = data.pop('category').id
+
+        # Transform tags if present
+        if 'tags' in data:
+            data['tags'] = [tag.id for tag in data.pop('tags')]
+
         result = self.service.create_product(
             vendor=vendor,
-            **serializer.validated_data
+            **data
         )
 
         if not result.success:
             raise ValidationError(result.error)
 
         serializer.instance = result.data
+
+    def destroy(self, request, *args, **kwargs):
+        """Soft delete products by setting is_active=False."""
+        instance = self.get_object()
+        instance.is_active = False
+        instance.save(update_fields=['is_active'])
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=False, methods=['post'])
     def search(self, request):

@@ -8,7 +8,7 @@ from django.utils import timezone
 from decimal import Decimal
 import logging
 
-from apps.core import models
+from django.db import models
 
 logger = logging.getLogger(__name__)
 
