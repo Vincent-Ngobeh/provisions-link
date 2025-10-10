@@ -342,6 +342,8 @@ class TestGroupBuyingCommitments:
         # Arrange
         test_buying_group.current_quantity = 95
         test_buying_group.target_quantity = 100
+        test_buying_group.product.stock_quantity = 200
+        test_buying_group.product.save()
         test_buying_group.save()
 
         mock_stripe_result = ServiceResult.ok({'intent_id': 'pi_test_123'})
