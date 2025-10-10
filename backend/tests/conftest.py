@@ -75,6 +75,36 @@ def get_point_class():
         return MockPoint
 
 
+# ==================== Module Reload Fixtures ====================
+
+@pytest.fixture(autouse=True, scope='function')
+def reload_tasks_modules():
+    """
+    Force reload of tasks modules to prevent import caching issues.
+
+    When running all tests together, Python caches imports. If tests run in different
+    orders, they may import old versions of modules. This fixture ensures fresh imports.
+    """
+    # List of task modules that may need reloading
+    task_modules = [
+        'apps.vendors.tasks',
+        'apps.buying_groups.tasks',
+        'apps.products.tasks',
+    ]
+
+    # Remove from sys.modules if present to force reimport
+    for module_name in task_modules:
+        if module_name in sys.modules:
+            del sys.modules[module_name]
+
+    yield  # Run the test
+
+    # Cleanup after test (optional, but good practice)
+    for module_name in task_modules:
+        if module_name in sys.modules:
+            del sys.modules[module_name]
+
+
 # ==================== Factory Classes ====================
 
 class UserFactory(DjangoModelFactory):
@@ -84,7 +114,7 @@ class UserFactory(DjangoModelFactory):
         model = User
         skip_postgeneration_save = True  # Fix for deprecation warning
 
-    email = factory.Faker('email')
+    email = factory.Sequence(lambda n: f'user{n}@example.com')
     username = factory.Sequence(lambda n: f'user{n}')
     first_name = factory.Faker('first_name')
     last_name = factory.Faker('last_name')
@@ -135,10 +165,9 @@ class VendorFactory(DjangoModelFactory):
         model = Vendor
 
     user = factory.SubFactory(UserFactory)
-    business_name = factory.LazyAttribute(
-        lambda _: fake.company()[:200])  # Ensure max 200 chars
-    slug = factory.LazyAttribute(
-        lambda _: fake.slug()[:250])  # Ensure max 250 chars
+    business_name = factory.Sequence(
+        lambda n: f'{fake.company()[:180]}-{n}'[:200])
+    slug = factory.Sequence(lambda n: f'{fake.slug()[:240]}-{n}'[:250])
     description = factory.Faker('text', max_nb_chars=500)
     phone_number = factory.LazyAttribute(
         # Ensure max 17 chars
@@ -197,8 +226,8 @@ class TagFactory(DjangoModelFactory):
     class Meta:
         model = Tag
 
-    name = factory.Faker('word')
-    slug = factory.Faker('slug')
+    name = factory.Sequence(lambda n: f'Tag-{n}')
+    slug = factory.Sequence(lambda n: f'tag-{n}')
     tag_type = factory.Faker('random_element', elements=[
                              'dietary', 'organic', 'origin', 'other'])
 
@@ -213,9 +242,9 @@ class ProductFactory(DjangoModelFactory):
     category = factory.SubFactory(CategoryFactory)
 
     name = factory.Faker('catch_phrase')
-    slug = factory.Faker('slug')
+    slug = factory.Sequence(lambda n: f'{fake.slug()[:240]}-{n}'[:250])
     description = factory.Faker('text', max_nb_chars=1000)
-    sku = factory.LazyAttribute(lambda _: fake.bothify('???-####'))
+    sku = factory.Sequence(lambda n: f'SKU-{n:06d}')
     barcode = factory.LazyAttribute(lambda _: fake.ean13())
 
     # Pricing
@@ -241,6 +270,24 @@ class ProductFactory(DjangoModelFactory):
     # Status
     is_active = True
     featured = False
+
+    @classmethod
+    def _create(cls, model_class, *args, **kwargs):
+        """Override create to allow explicit created_at bypass of auto_now_add."""
+        # Extract created_at if provided
+        custom_created_at = kwargs.pop('created_at', None)
+
+        # Create object normally
+        obj = model_class(*args, **kwargs)
+        obj.save()
+
+        # Update created_at using queryset.update() to bypass auto_now_add
+        if custom_created_at is not None:
+            model_class.objects.filter(pk=obj.pk).update(
+                created_at=custom_created_at)
+            obj.refresh_from_db()
+
+        return obj
 
 
 class OrderFactory(DjangoModelFactory):
@@ -302,10 +349,12 @@ class OrderItemFactory(DjangoModelFactory):
 
     order = factory.SubFactory(OrderFactory)
     product = factory.SubFactory(ProductFactory)
-    quantity = factory.Faker('random_int', min=1, max=10)
+    quantity = 1
     unit_price = Decimal('20.00')
-    total_price = Decimal('100.00')
     discount_amount = Decimal('0.00')
+    total_price = factory.LazyAttribute(
+        lambda obj: (obj.unit_price * obj.quantity) - obj.discount_amount
+    )
 
 
 # GIS-dependent factories
