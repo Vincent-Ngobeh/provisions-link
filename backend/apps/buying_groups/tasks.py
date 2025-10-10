@@ -30,7 +30,8 @@ def process_expired_buying_groups():
             expires_at__lte=timezone.now()
         )
 
-        logger.info(f"Processing {expired_groups.count()} expired groups")
+        count = expired_groups.count()
+        logger.info(f"Processing {count} expired groups")
 
         # Process each group
         stats = service.process_expired_groups()
@@ -111,7 +112,7 @@ def check_group_thresholds():
                 event_type='threshold'
             ).values_list('event_data', flat=True)
 
-            # FIXED: Check 80% threshold FIRST (higher thresholds first)
+            # Check 80% threshold FIRST (higher thresholds first)
             # This ensures both thresholds can be triggered independently
             if progress >= 80 and not any('80%' in str(update) for update in existing_threshold_updates):
                 broadcaster.broadcast_threshold_reached(
