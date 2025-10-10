@@ -416,12 +416,8 @@ class GroupBuyingService(BaseService):
                 quantity=quantity
             )
 
-            return ServiceResult.ok({
-                'commitment': commitment,
-                'payment_intent': payment_result.data,
-                'group_status': group.status,
-                'progress_percent': progress_percent
-            })
+            # FIXED: Return just the commitment object, not a dict
+            return ServiceResult.ok(commitment)
 
         except Exception as e:
             self.log_error(f"Error creating commitment", exception=e)

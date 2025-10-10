@@ -2,6 +2,7 @@
 ViewSet implementations for group buying operations.
 Handles group creation, commitments, and real-time updates.
 """
+from decimal import Decimal
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -31,7 +32,7 @@ class BuyingGroupViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         """Configure permissions per action."""
-        if self.action in ['list', 'retrieve', 'active_groups', 'near_me']:
+        if self.action in ['list', 'retrieve', 'active_groups', 'near_me', 'realtime_status']:
             permission_classes = [AllowAny]
         else:
             permission_classes = [IsAuthenticated]
@@ -68,11 +69,13 @@ class BuyingGroupViewSet(viewsets.ModelViewSet):
         if product_id:
             queryset = queryset.filter(product_id=product_id)
 
-        # Filter expired groups
-        hide_expired = self.request.query_params.get(
-            'hide_expired', 'true').lower() == 'true'
-        if hide_expired:
-            queryset = queryset.filter(expires_at__gt=timezone.now())
+        # Don't filter expired groups for actions that need to handle them
+        # (like commit, which needs to show proper validation error)
+        if self.action not in ['commit', 'cancel_commitment', 'retrieve']:
+            hide_expired = self.request.query_params.get(
+                'hide_expired', 'true').lower() == 'true'
+            if hide_expired:
+                queryset = queryset.filter(expires_at__gt=timezone.now())
 
         return queryset.order_by('-created_at')
 
@@ -93,6 +96,15 @@ class BuyingGroupViewSet(viewsets.ModelViewSet):
             return Response({
                 'error': 'product_id and postcode are required'
             }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Convert discount_percent to Decimal if provided
+        if discount_percent:
+            try:
+                discount_percent = Decimal(str(discount_percent))
+            except (ValueError, TypeError):
+                return Response({
+                    'error': 'Invalid discount_percent format'
+                }, status=status.HTTP_400_BAD_REQUEST)
 
         result = self.service.create_group_for_area(
             product_id=int(product_id),
@@ -136,11 +148,24 @@ class BuyingGroupViewSet(viewsets.ModelViewSet):
         )
 
         if result.success:
+            # Handle both dict and object return types from service
+            if isinstance(result.data, dict):
+                commitment = result.data.get('commitment')
+                payment_intent = result.data.get('payment_intent')
+                progress_percent = result.data.get('progress_percent')
+            else:
+                # If service returns the commitment object directly
+                commitment = result.data
+                payment_intent = None
+                # Refresh group to get updated progress
+                group.refresh_from_db()
+                progress_percent = group.progress_percent
+
             return Response({
                 'message': 'Successfully committed to group',
-                'commitment': GroupCommitmentSerializer(result.data['commitment']).data,
-                'payment_intent': result.data['payment_intent'],
-                'group_progress': result.data['progress_percent']
+                'commitment': GroupCommitmentSerializer(commitment).data,
+                'payment_intent': payment_intent,
+                'group_progress': progress_percent
             }, status=status.HTTP_201_CREATED)
 
         return Response({
