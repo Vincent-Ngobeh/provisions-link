@@ -1,10 +1,10 @@
 # apps/core/serializers.py
 
-from datetime import timezone
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from .models import Address, PrivacySettings
 
 User = get_user_model()
@@ -131,11 +131,12 @@ class LoginSerializer(serializers.Serializer):
             raise serializers.ValidationError("Invalid credentials")
 
         # Authenticate
-        user = authenticate(username=user.username, password=password)
-        if not user:
+        authenticated_user = authenticate(
+            username=user.email, password=password)
+        if not authenticated_user:
             raise serializers.ValidationError("Invalid credentials")
 
-        attrs['user'] = user
+        attrs['user'] = authenticated_user
         return attrs
 
 
@@ -158,39 +159,75 @@ class PasswordChangeSerializer(serializers.Serializer):
 
 
 class GDPRExportSerializer(serializers.Serializer):
-    """Format all user data for GDPR export"""
+    """
+    Serializer for GDPR data export.
+    Exports all user data in a structured format.
+    """
 
-    def to_representation(self, user):
+    def to_representation(self, instance):
+        """
+        Export all user data.
+
+        Args:
+            instance: User instance
+
+        Returns:
+            Dictionary containing all user data
+        """
         from apps.vendors.serializers import VendorDetailSerializer
-        from apps.orders.serializers import OrderDetailSerializer
-        from apps.buying_groups.serializers import GroupCommitmentSerializer
+        from apps.orders.serializers import OrderListSerializer
 
-        data = {
-            'exported_at': timezone.now().isoformat(),
-            'user_profile': UserPrivateSerializer(user).data,
-            'privacy_settings': PrivacySettingsSerializer(
-                user.privacy_settings
-            ).data if hasattr(user, 'privacy_settings') else None,
-            'addresses': AddressSerializer(
-                user.addresses.all(), many=True
-            ).data,
+        # Basic user profile
+        user_data = {
+            'id': instance.id,
+            'email': instance.email,
+            'username': instance.username,
+            'first_name': instance.first_name,
+            'last_name': instance.last_name,
+            'phone_number': instance.phone_number,
+            'date_joined': instance.date_joined,
+            'last_login': instance.last_login,
         }
 
-        # Include vendor data if applicable
-        if hasattr(user, 'vendor'):
-            data['vendor_profile'] = VendorDetailSerializer(user.vendor).data
+        # Privacy settings
+        privacy_settings = None
+        if hasattr(instance, 'privacy_settings'):
+            privacy_settings = PrivacySettingsSerializer(
+                instance.privacy_settings
+            ).data
 
-        # Order history
-        data['orders'] = OrderDetailSerializer(
-            user.orders.all().select_related('vendor', 'delivery_address')
-            .prefetch_related('items__product'),
+        # Addresses
+        addresses = AddressSerializer(
+            instance.addresses.all(),
             many=True
         ).data
 
-        # Group commitments
-        data['group_commitments'] = GroupCommitmentSerializer(
-            user.group_commitments.all().select_related('group__product'),
+        # Vendor profile (if exists)
+        vendor_profile = None
+        if hasattr(instance, 'vendor'):
+            vendor_profile = VendorDetailSerializer(instance.vendor).data
+
+        # Orders as buyer - the related_name is 'orders'
+        orders = OrderListSerializer(
+            instance.orders.all(),  # Changed from orders_as_buyer to orders
             many=True
         ).data
 
-        return data
+        # Group commitments - the related_name is 'group_commitments' (already correct)
+        group_commitments = []
+        if hasattr(instance, 'group_commitments'):
+            from apps.buying_groups.serializers import GroupCommitmentSerializer
+            group_commitments = GroupCommitmentSerializer(
+                instance.group_commitments.all(),
+                many=True
+            ).data
+
+        return {
+            'exported_at': timezone.now(),
+            'user_profile': user_data,
+            'privacy_settings': privacy_settings,
+            'addresses': addresses,
+            'vendor_profile': vendor_profile,  # Always included, even if None
+            'orders': orders,
+            'group_commitments': group_commitments
+        }
