@@ -1,13 +1,14 @@
 """
 URL Configuration for Provisions Link
 """
-from django.contrib import admin
+# from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from django.http import JsonResponse
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from apps.integrations.views import stripe_webhook  # Add this import
+from apps.core.admin_site import custom_admin_site
 
 
 def home_view(request):
@@ -27,7 +28,7 @@ def home_view(request):
 
 urlpatterns = [
     path('', home_view, name='home'),
-    path('admin/', admin.site.urls),
+    path('admin/', custom_admin_site.urls),
 
     # API v1 endpoints
     path('api/v1/', include('provisions_link.api_urls')),
@@ -56,8 +57,3 @@ if settings.DEBUG:
         ] + urlpatterns
     except ImportError:
         pass
-
-# Admin site customization
-admin.site.site_header = "Provisions Link Admin"
-admin.site.site_title = "Provisions Link"
-admin.site.index_title = "Welcome to Provisions Link Administration"
