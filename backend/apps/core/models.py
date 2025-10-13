@@ -1,16 +1,66 @@
 # apps/core/models.py
 
-from django.contrib.auth.models import AbstractUser
+from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.contrib.gis.db import models
 from django.core.validators import RegexValidator
 from django.utils.translation import gettext_lazy as _
 
 
+class UserManager(BaseUserManager):
+    """
+    Custom user manager for email-based authentication.
+    """
+
+    def create_user(self, email, password=None, **extra_fields):
+        """
+        Create and save a regular user with the given email and password.
+        """
+        if not email:
+            raise ValueError(_('The Email field must be set'))
+
+        email = self.normalize_email(email)
+
+        # Set username to email if not provided
+        if 'username' not in extra_fields:
+            extra_fields['username'] = email
+
+        user = self.model(email=email, **extra_fields)
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
+
+    def create_superuser(self, email, password=None, **extra_fields):
+        """
+        Create and save a superuser with the given email and password.
+        """
+        extra_fields.setdefault('is_staff', True)
+        extra_fields.setdefault('is_superuser', True)
+        extra_fields.setdefault('is_active', True)
+
+        if extra_fields.get('is_staff') is not True:
+            raise ValueError(_('Superuser must have is_staff=True.'))
+        if extra_fields.get('is_superuser') is not True:
+            raise ValueError(_('Superuser must have is_superuser=True.'))
+
+        return self.create_user(email, password, **extra_fields)
+
+
 class User(AbstractUser):
     """
     Custom User model extending AbstractUser.
-    This will be the base for all authentication in the system.
+    Uses email for authentication instead of username.
     """
+    # Override username to make it optional and non-unique
+    username = models.CharField(
+        _('username'),
+        max_length=150,
+        unique=False,
+        blank=True,
+        null=True,
+        help_text=_(
+            'Optional. 150 characters or fewer. Letters, digits and @/./+/-/_ only.'),
+    )
+
     email = models.EmailField(
         _('email address'),
         unique=True,
@@ -32,8 +82,10 @@ class User(AbstractUser):
 
     # Use email as the username field
     USERNAME_FIELD = 'email'
-    # username is still required for createsuperuser
-    REQUIRED_FIELDS = ['username']
+    REQUIRED_FIELDS = []  # Email is already required as USERNAME_FIELD
+
+    # Use custom manager
+    objects = UserManager()
 
     class Meta:
         db_table = 'users'
