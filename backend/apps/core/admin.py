@@ -4,14 +4,18 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.utils.translation import gettext_lazy as _
 from .models import User, Address, PrivacySettings
+from .admin_site import custom_admin_site
 
 
-@admin.register(User)
-class UserAdmin(BaseUserAdmin):
-    """Admin configuration for custom User model."""
+class CustomUserAdmin(BaseUserAdmin):
+    """Custom UserAdmin that works with email as USERNAME_FIELD."""
+
+    list_display = ('email', 'first_name', 'last_name',
+                    'is_staff', 'is_superuser')
+    list_filter = ('is_staff', 'is_superuser', 'is_active')
 
     fieldsets = (
-        (None, {'fields': ('email', 'username', 'password')}),
+        (None, {'fields': ('email', 'password')}),
         (_('Personal info'), {
          'fields': ('first_name', 'last_name', 'phone_number')}),
         (_('Permissions'), {
@@ -19,29 +23,38 @@ class UserAdmin(BaseUserAdmin):
         }),
         (_('Important dates'), {'fields': ('last_login', 'date_joined')}),
     )
+
     add_fieldsets = (
         (None, {
             'classes': ('wide',),
-            'fields': ('email', 'username', 'password1', 'password2'),
+            'fields': ('email', 'password1', 'password2'),
         }),
     )
-    list_display = ('email', 'username', 'first_name', 'last_name', 'is_staff')
-    list_filter = ('is_staff', 'is_superuser', 'is_active', 'date_joined')
-    search_fields = ('email', 'username', 'first_name', 'last_name')
-    ordering = ('-date_joined',)
+
+    search_fields = ('email', 'first_name', 'last_name')
+    ordering = ('email',)
+    filter_horizontal = ('groups', 'user_permissions',)
 
 
-@admin.register(Address)
 class AddressAdmin(admin.ModelAdmin):
-    list_display = ('user', 'address_name', 'postcode', 'city', 'is_default')
-    list_filter = ('is_default', 'country')
+    list_display = ('user', 'address_name', 'postcode', 'is_default')
+    list_filter = ('address_name', 'is_default')
     search_fields = ('user__email', 'postcode', 'city')
-    readonly_fields = ('created_at', 'updated_at')
 
 
-@admin.register(PrivacySettings)
 class PrivacySettingsAdmin(admin.ModelAdmin):
-    list_display = ('user', 'marketing_emails', 'order_updates',
-                    'data_sharing', 'analytics_tracking')
+    list_display = ('user', 'marketing_emails',
+                    'order_updates', 'data_sharing')
+    list_filter = ('marketing_emails', 'order_updates')
     search_fields = ('user__email',)
-    readonly_fields = ('updated_at',)
+
+
+# Register with custom admin site
+custom_admin_site.register(User, CustomUserAdmin)
+custom_admin_site.register(Address, AddressAdmin)
+custom_admin_site.register(PrivacySettings, PrivacySettingsAdmin)
+
+# Also register with default admin site for compatibility
+admin.site.register(User, CustomUserAdmin)
+admin.site.register(Address, AddressAdmin)
+admin.site.register(PrivacySettings, PrivacySettingsAdmin)
