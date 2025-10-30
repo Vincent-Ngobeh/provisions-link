@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { productsApi } from '@/api/endpoints';
@@ -18,12 +18,12 @@ export function ProductsPage() {
   const [page, setPage] = useState(1);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
-  // Initialize filters from URL params
+  
   const [filters, setFilters] = useState<ProductFiltersState>({
     categories: searchParams.get('categories')?.split(',').map(Number).filter(Boolean) || [],
     tags: searchParams.get('tags')?.split(',').map(Number).filter(Boolean) || [],
     minPrice: Number(searchParams.get('minPrice')) || 0,
-    maxPrice: Number(searchParams.get('maxPrice')) || 100,
+    maxPrice: Number(searchParams.get('maxPrice')) || 50,
     inStockOnly: searchParams.get('inStock') === 'true',
     allergenFree: searchParams.get('allergenFree')?.split(',').filter(Boolean) || [],
     minFsaRating: searchParams.get('minFsa') ? Number(searchParams.get('minFsa')) : undefined,
@@ -37,9 +37,11 @@ export function ProductsPage() {
     };
 
     if (searchQuery) params.search = searchQuery;
-    if (filters.categories.length > 0) params.category = filters.categories[0]; // Backend supports single category
+    if (filters.categories.length > 0) params.category = filters.categories[0];
+    
     if (filters.minPrice > 0) params.min_price = filters.minPrice;
-    if (filters.maxPrice < 100) params.max_price = filters.maxPrice;
+    if (filters.maxPrice < 50) params.max_price = filters.maxPrice;
+    
     if (filters.inStockOnly) params.in_stock_only = true;
     if (filters.minFsaRating) params.min_fsa_rating = filters.minFsaRating;
 
@@ -57,11 +59,12 @@ export function ProductsPage() {
     updateUrlParams();
   };
 
-  const handleFiltersChange = (newFilters: ProductFiltersState) => {
+  // Memoize callback to prevent recreation on every render
+  const handleFiltersChange = useCallback((newFilters: ProductFiltersState) => {
     setFilters(newFilters);
     setPage(1);
     updateUrlParams(newFilters);
-  };
+  }, []); // Empty deps - function never changes
 
   const updateUrlParams = (filtersToUse = filters) => {
     const params = new URLSearchParams();
@@ -70,7 +73,7 @@ export function ProductsPage() {
     if (filtersToUse.categories.length > 0) params.set('categories', filtersToUse.categories.join(','));
     if (filtersToUse.tags.length > 0) params.set('tags', filtersToUse.tags.join(','));
     if (filtersToUse.minPrice > 0) params.set('minPrice', filtersToUse.minPrice.toString());
-    if (filtersToUse.maxPrice < 100) params.set('maxPrice', filtersToUse.maxPrice.toString());
+    if (filtersToUse.maxPrice < 50) params.set('maxPrice', filtersToUse.maxPrice.toString());
     if (filtersToUse.inStockOnly) params.set('inStock', 'true');
     if (filtersToUse.allergenFree.length > 0) params.set('allergenFree', filtersToUse.allergenFree.join(','));
     if (filtersToUse.minFsaRating) params.set('minFsa', filtersToUse.minFsaRating.toString());
@@ -84,7 +87,7 @@ export function ProductsPage() {
     filters.allergenFree.length +
     (filters.inStockOnly ? 1 : 0) +
     (filters.minFsaRating ? 1 : 0) +
-    ((filters.minPrice > 0 || filters.maxPrice < 100) ? 1 : 0);
+    ((filters.minPrice > 0 || filters.maxPrice < 50) ? 1 : 0);
 
   return (
     <div className="space-y-6">
@@ -104,7 +107,7 @@ export function ProductsPage() {
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             type="text"
-            placeholder="Search products..."
+            placeholder="Search by name or description..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-10"
@@ -238,7 +241,7 @@ export function ProductsPage() {
                       categories: [],
                       tags: [],
                       minPrice: 0,
-                      maxPrice: 100,
+                      maxPrice: 50,
                       inStockOnly: false,
                       allergenFree: [],
                       minFsaRating: undefined,

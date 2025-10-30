@@ -15,16 +15,33 @@ import {
   Star,
   Users
 } from 'lucide-react';
+import { useCart } from '@/contexts/CartContext';
+import { useAuth } from '@/contexts/AuthContext';
 
 export function ProductDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { addToCart } = useCart();
+  const { isAuthenticated } = useAuth();
 
   const { data: product, isLoading, error } = useQuery({
     queryKey: ['product', id],
     queryFn: () => productsApi.get(Number(id)),
     enabled: !!id,
   });
+
+  const handleAddToCart = async () => {
+    if (!isAuthenticated) {
+      navigate('/login');
+      return;
+    }
+    
+    try {
+      await addToCart(productData.id, 1);
+    } catch (error) {
+      console.error('Failed to add to cart:', error);
+    }
+  };
 
   if (isLoading) {
     return <ProductDetailSkeleton />;
@@ -183,18 +200,26 @@ export function ProductDetailPage() {
           )}
 
           {/* Actions */}
-          <div className="space-y-2">
+          <div className="space-y-3">
             <Button 
               size="lg" 
               className="w-full"
               disabled={!productData.in_stock}
+              onClick={handleAddToCart}
             >
               <ShoppingCart className="mr-2 h-5 w-5" />
-              Add to Order
+              Add to Cart
             </Button>
+            
             <p className="text-xs text-center text-muted-foreground">
-              Minimum order: £{productData.vendor.min_order_value}
+              Vendor minimum order: £{productData.vendor.min_order_value}
             </p>
+            
+            {productData.active_group && (
+              <p className="text-xs text-center text-muted-foreground">
+                💡 Or join the group buy above for {productData.active_group.discount_percent}% discount
+              </p>
+            )}
           </div>
 
           {/* Vendor Info Card */}
@@ -304,7 +329,9 @@ export function ProductDetailPage() {
             </div>
             <div>
               <dt className="text-sm text-muted-foreground">Category</dt>
-              <dd className="font-medium">{productData.category_name}</dd>
+              <dd className="font-medium">
+                {productData.category?.name || 'Uncategorized'}
+              </dd>
             </div>
           </dl>
         </CardContent>
