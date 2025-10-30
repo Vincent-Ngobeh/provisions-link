@@ -34,7 +34,7 @@ services:
 
   backend:
     build: .
-    command: sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
+    command: sh -c "python manage.py migrate && daphne -b 0.0.0.0 -p 8000 provisions_link.asgi:application"
     volumes:
       - .:/app
     ports:
@@ -48,7 +48,55 @@ services:
       - .env
     environment:
       DB_HOST: db
-      DB_PORT: 5432  # Internal Docker port
+      DB_PORT: 5432
+      DB_NAME: provisions_link
+      DB_USER: provisions_user
+      DB_PASSWORD: provisions_pass
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      DJANGO_SETTINGS_MODULE: provisions_link.settings.development
+    networks:
+      - provisions_network
+
+  celery_worker:
+    build: .
+    command: celery -A provisions_link worker -l info
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: provisions_link
+      DB_USER: provisions_user
+      DB_PASSWORD: provisions_pass
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      DJANGO_SETTINGS_MODULE: provisions_link.settings.development
+    networks:
+      - provisions_network
+
+  celery_beat:
+    build: .
+    command: celery -A provisions_link beat -l info
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
       DB_NAME: provisions_link
       DB_USER: provisions_user
       DB_PASSWORD: provisions_pass
