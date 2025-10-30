@@ -217,6 +217,17 @@ export function ProfilePage() {
                 View My Orders
               </Button>
 
+              {!isVendor && (
+                <Button
+                  variant="default"
+                  className="w-full justify-start"
+                  onClick={() => navigate('/vendors/register')}
+                >
+                  <Store className="h-4 w-4 mr-2" />
+                  Become a Vendor
+                </Button>
+              )}
+
               {isVendor && (
                 <Button
                   variant="outline"
