@@ -5,6 +5,24 @@ from django.utils import timezone
 from .models import BuyingGroup, GroupCommitment, GroupUpdate
 from apps.products.serializers import ProductListSerializer
 from apps.core.serializers import UserPublicSerializer
+from apps.vendors.serializers import VendorListSerializer
+
+
+class ProductForGroupSerializer(serializers.ModelSerializer):
+    """Product details for buying group display - includes description"""
+    vendor = VendorListSerializer(read_only=True)
+    category_name = serializers.CharField(
+        source='category.name', read_only=True)
+    in_stock = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        from apps.products.models import Product
+        model = Product
+        fields = [
+            'id', 'name', 'slug', 'description', 'vendor', 'category_name',
+            'price', 'price_with_vat', 'unit', 'primary_image', 'stock_quantity',
+            'in_stock', 'contains_allergens', 'allergen_info', 'allergen_statement'
+        ]
 
 
 class BuyingGroupListSerializer(serializers.ModelSerializer):
@@ -20,7 +38,7 @@ class BuyingGroupListSerializer(serializers.ModelSerializer):
         model = BuyingGroup
         fields = [
             'id', 'product_name', 'vendor_name', 'area_name',
-            'target_quantity', 'current_quantity', 'discount_percent',
+            'target_quantity', 'current_quantity', 'min_quantity', 'discount_percent',
             'progress_percent', 'time_remaining', 'expires_at', 'status'
         ]
 
@@ -35,16 +53,17 @@ class BuyingGroupListSerializer(serializers.ModelSerializer):
 
 class BuyingGroupDetailSerializer(serializers.ModelSerializer):
     """Full group details with product info"""
-    product = ProductListSerializer(read_only=True)
+    product = ProductForGroupSerializer(read_only=True)
     savings_per_unit = serializers.DecimalField(
         max_digits=10, decimal_places=2, read_only=True
     )
     discounted_price = serializers.DecimalField(
         max_digits=10, decimal_places=2, read_only=True
     )
-    participants_count = serializers.IntegerField(
-        source='commitments.count', read_only=True
-    )
+
+    # This field is added via .annotate(participants_count=Count(...)) in get_queryset()
+    # It only counts pending commitments, not all commitments
+    participants_count = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = BuyingGroup
@@ -100,11 +119,12 @@ class GroupCommitmentSerializer(serializers.ModelSerializer):
         model = GroupCommitment
         fields = [
             'id', 'group', 'buyer', 'quantity', 'buyer_postcode',
-            'total_price', 'total_savings', 'status', 'committed_at'
+            'total_price', 'total_savings', 'status', 'committed_at',
+            'order'
         ]
         read_only_fields = [
             'id', 'buyer', 'total_price', 'total_savings',
-            'status', 'committed_at'
+            'status', 'committed_at', 'order'
         ]
 
     def validate(self, attrs):
@@ -146,8 +166,10 @@ class BuyingGroupRealtimeSerializer(serializers.ModelSerializer):
     """Lightweight serializer for WebSocket updates"""
     progress_percent = serializers.FloatField(read_only=True)
     time_remaining = serializers.SerializerMethodField()
+    # FIX 5 & 6: Use the annotated participants_count field from the viewset
+    # Don't use commitments.count which counts ALL commitments
     current_participants = serializers.IntegerField(
-        source='commitments.count', read_only=True
+        source='participants_count', read_only=True
     )
 
     class Meta:

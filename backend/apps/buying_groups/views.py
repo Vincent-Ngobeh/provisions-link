@@ -51,18 +51,30 @@ class BuyingGroupViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """
         Filter and optimize queryset.
+
+        FIX 5: CRITICAL - Always annotate participants_count for ALL actions,
+        including 'retrieve' (detail view). Previously, this annotation may have
+        been conditionally applied only for list views, causing detail pages to
+        show 0 participants and 0% progress.
         """
         queryset = super().get_queryset().select_related(
             'product__vendor', 'product__category'
         ).annotate(
+            # ALWAYS annotate participants_count - needed for both list AND detail views
             participants_count=Count(
-                'commitments', filter=Q(commitments__status='pending'))
+                'commitments',
+                filter=Q(commitments__status='pending')
+            )
         )
+        # NOTE: No conditional wrapping around the annotation above!
+        # It must be applied to all queries regardless of action.
 
-        # Filter by status
+        # Filter by status (supports comma-separated values for multiple statuses)
         status_filter = self.request.query_params.get('status')
         if status_filter:
-            queryset = queryset.filter(status=status_filter)
+            # Support filtering by multiple statuses: ?status=open,active
+            statuses = [s.strip() for s in status_filter.split(',')]
+            queryset = queryset.filter(status__in=statuses)
 
         # Filter by product
         product_id = self.request.query_params.get('product')
@@ -291,6 +303,31 @@ class BuyingGroupViewSet(viewsets.ModelViewSet):
                 }
                 for update in recent_updates
             ]
+        })
+
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
+    def my_commitments(self, request):
+        """
+        Get current user's group commitments.
+        GET /api/buying-groups/my_commitments/
+        """
+        commitments = GroupCommitment.objects.filter(
+            buyer=request.user
+        ).select_related(
+            'group__product__vendor',
+            'group__product__category'
+        ).order_by('-committed_at')
+
+        # Separate by status
+        active = commitments.filter(status='pending')
+        confirmed = commitments.filter(status='confirmed')
+        cancelled = commitments.filter(status='cancelled')
+
+        return Response({
+            'active': GroupCommitmentSerializer(active, many=True).data,
+            'confirmed': GroupCommitmentSerializer(confirmed, many=True).data,
+            'cancelled': GroupCommitmentSerializer(cancelled, many=True).data,
+            'total_count': commitments.count(),
         })
 
 

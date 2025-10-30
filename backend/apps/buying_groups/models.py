@@ -197,6 +197,16 @@ class GroupCommitment(models.Model):
         help_text="Stripe payment intent for pre-authorization"
     )
 
+    # Order linkage
+    order = models.ForeignKey(
+        'orders.Order',  # String reference to avoid circular import
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='group_commitment',
+        help_text="Order created from this commitment when group succeeds"
+    )
+
     # Timestamps
     committed_at = models.DateTimeField(auto_now_add=True)
 
@@ -211,8 +221,7 @@ class GroupCommitment(models.Model):
         db_table = 'group_commitments'
         verbose_name = _('Group Commitment')
         verbose_name_plural = _('Group Commitments')
-        # One commitment per buyer per group
-        unique_together = [['group', 'buyer']]
+
         indexes = [
             models.Index(fields=['group', 'status']),
             models.Index(fields=['buyer', 'status']),
