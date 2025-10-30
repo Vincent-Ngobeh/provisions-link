@@ -1,9 +1,9 @@
 // frontend/src/pages/BuyingGroupDetailPage.tsx
 // Detail page with real-time WebSocket updates
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { buyingGroupsApi } from '@/api/endpoints';
 import { useGroupBuyingWebSocket } from '@/hooks/useGroupBuyingWebSocket';
 import { useAuth } from '@/contexts/AuthContext';
@@ -18,6 +18,17 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import type { GroupCommitment } from '@/types';
+import {
   ArrowLeft,
   Store,
   MapPin,
@@ -30,6 +41,7 @@ import {
   TrendingUp,
   Users,
   Target,
+  Loader2,
 } from 'lucide-react';
 
 export default function BuyingGroupDetailPage() {
@@ -40,6 +52,8 @@ export default function BuyingGroupDetailPage() {
   const queryClient = useQueryClient();
   
   const [showJoinModal, setShowJoinModal] = useState(false);
+  const [showCancelDialog, setShowCancelDialog] = useState(false);
+  const [userCommitment, setUserCommitment] = useState<any>(null);
   const [realtimeData, setRealtimeData] = useState<any>(null);
 
   // Fetch group details
@@ -50,6 +64,28 @@ export default function BuyingGroupDetailPage() {
   });
 
   const group = groupData?.data;
+
+  // Cancel commitment mutation
+  const cancelCommitmentMutation = useMutation({
+    mutationFn: () => buyingGroupsApi.cancelCommitment(parseInt(id!)),
+    onSuccess: () => {
+      toast({
+        title: 'Commitment Cancelled',
+        description: 'Your commitment has been cancelled successfully.',
+      });
+      
+      // Refresh group data
+      queryClient.invalidateQueries({ queryKey: ['buying-group', id] });
+      setUserCommitment(null);
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Error',
+        description: error.response?.data?.error || 'Failed to cancel commitment.',
+        variant: 'destructive',
+      });
+    },
+  });
 
   // WebSocket connection with callbacks
   const {
@@ -101,6 +137,35 @@ export default function BuyingGroupDetailPage() {
       });
     },
   });
+
+  // Check if user has a commitment to this group
+  useEffect(() => {
+    if (!group || !user) {
+      setUserCommitment(null);
+      return;
+    }
+    // Fetch user's commitments and find one for this group
+    const checkCommitment = async () => {
+      try {
+        const response = await buyingGroupsApi.myCommitments();
+        const allCommitments = [
+          ...response.data.active,
+          ...response.data.confirmed,
+        ];
+        
+        // Find commitment for this specific group
+        const commitment = allCommitments.find(
+          (c: any) => c.group === group.id
+        );
+        
+        setUserCommitment(commitment || null);
+      } catch (error) {
+        console.error('Error fetching commitments:', error);
+        setUserCommitment(null);
+      }
+    };
+    checkCommitment();
+  }, [group, user]); // Re-check when group or user changes
 
   // Use realtime data if available, otherwise use group data
   const currentQuantity = realtimeData?.current_quantity ?? group?.current_quantity ?? 0;
@@ -313,15 +378,43 @@ export default function BuyingGroupDetailPage() {
               </div>
 
               {user ? (
-                <Button
-                  className="w-full"
-                  size="lg"
-                  onClick={() => setShowJoinModal(true)}
-                  disabled={group.status !== 'open'}
-                >
-                  <Users className="h-4 w-4 mr-2" />
-                  Join This Group
-                </Button>
+                <div className="space-y-2">
+                  {userCommitment ? (
+                    <>
+                      <Alert className="bg-green-50 border-green-200">
+                        <CheckCircle className="h-4 w-4 text-green-600" />
+                        <AlertDescription className="text-sm text-green-700">
+                          You have committed {userCommitment.quantity} units
+                        </AlertDescription>
+                      </Alert>
+                      <Button
+                        className="w-full"
+                        variant="outline"
+                        onClick={() => setShowCancelDialog(true)}
+                        disabled={cancelCommitmentMutation.isPending || group.status !== 'open'}
+                      >
+                        {cancelCommitmentMutation.isPending ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Cancelling...
+                          </>
+                        ) : (
+                          'Cancel My Commitment'
+                        )}
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      className="w-full"
+                      size="lg"
+                      onClick={() => setShowJoinModal(true)}
+                      disabled={group.status !== 'open'}
+                    >
+                      <Users className="h-4 w-4 mr-2" />
+                      Join This Group
+                    </Button>
+                  )}
+                </div>
               ) : (
                 <Button
                   className="w-full"
@@ -391,7 +484,8 @@ export default function BuyingGroupDetailPage() {
           group={group}
           open={showJoinModal}
           onOpenChange={setShowJoinModal}
-          onSuccess={() => {
+          onSuccess={(commitment: GroupCommitment) => {
+            setUserCommitment(commitment);
             toast({
               title: 'Success!',
               description: 'You have joined the buying group.',
@@ -399,6 +493,31 @@ export default function BuyingGroupDetailPage() {
           }}
         />
       )}
+
+      {/* Cancel Commitment Dialog */}
+      <AlertDialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel Commitment?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to cancel your commitment of {userCommitment?.quantity} units?
+              Your payment hold will be released.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep Commitment</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                cancelCommitmentMutation.mutate();
+                setShowCancelDialog(false);
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Cancel Commitment
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
