@@ -20,7 +20,7 @@ from apps.core.services.base import (
 from apps.buying_groups.models import BuyingGroup, GroupCommitment, GroupUpdate
 from apps.products.models import Product
 from apps.core.models import User
-from apps.core.utils.websocket_utils import broadcaster  # ADD THIS IMPORT
+from apps.core.utils.websocket_utils import broadcaster
 
 
 class GroupBuyingService(BaseService):
@@ -416,7 +416,7 @@ class GroupBuyingService(BaseService):
                 quantity=quantity
             )
 
-            # FIXED: Return just the commitment object, not a dict
+            # Return just the commitment object
             return ServiceResult.ok(commitment)
 
         except Exception as e:
@@ -445,45 +445,75 @@ class GroupBuyingService(BaseService):
 
     def _handle_target_reached(self, group: BuyingGroup) -> None:
         """
-        Handle actions when a group reaches its target with WebSocket notification.
+        Handle actions when a group reaches its target.
+        NOW CREATES ORDERS IMMEDIATELY instead of waiting for expiry.
 
         Args:
             group: The buying group that reached target
         """
+        from apps.orders.services.order_service import OrderService
+
         old_status = group.status
 
-        # Update status
-        group.status = 'active'
-        group.save(update_fields=['status'])
-
-        # WEBSOCKET: Broadcast status change
-        broadcaster.broadcast_status_change(
+        self.log_info(
+            f"Group {group.id} reached target - creating orders immediately",
             group_id=group.id,
-            old_status=old_status,
-            new_status='active',
-            reason='Target quantity reached!'
+            target=group.target_quantity,
+            current=group.current_quantity
         )
 
-        # Create notification event for database
+        # Create notification BEFORE processing orders
         GroupUpdate.objects.create(
             group=group,
             event_type='threshold',
             event_data={
-                'message': 'Target quantity reached! Group discount unlocked.',
+                'message': 'Target quantity reached! Processing orders now...',
                 'target': group.target_quantity,
                 'current': group.current_quantity,
                 'discount': str(group.discount_percent)
             }
         )
 
-        # TODO: Send notifications to all participants
-        # This would integrate with notification service
+        # IMMEDIATE ORDER CREATION
+        order_service = OrderService()
+        result = order_service.create_orders_from_successful_group(group.id)
 
-        self.log_info(
-            f"Group {group.id} reached target quantity",
-            group_id=group.id,
-            target=group.target_quantity
-        )
+        if result.success:
+            # Orders created successfully - mark as completed
+            group.status = 'completed'
+            group.save(update_fields=['status'])
+
+            # WEBSOCKET: Broadcast completion
+            broadcaster.broadcast_status_change(
+                group_id=group.id,
+                old_status=old_status,
+                new_status='completed',
+                reason=f'Target reached! {result.data["orders_created"]} orders created successfully!'
+            )
+
+            self.log_info(
+                f"Group {group.id} completed - {result.data['orders_created']} orders created",
+                group_id=group.id,
+                orders_created=result.data['orders_created']
+            )
+        else:
+            # Order creation failed - mark as active (will retry in process_expired_groups)
+            group.status = 'active'
+            group.save(update_fields=['status'])
+
+            # WEBSOCKET: Broadcast active status (indicates temporary issue)
+            broadcaster.broadcast_status_change(
+                group_id=group.id,
+                old_status=old_status,
+                new_status='active',
+                reason='Target reached! Processing orders...'
+            )
+
+            self.log_error(
+                f"Failed to create orders for group {group.id}: {result.error}",
+                group_id=group.id,
+                error=result.error
+            )
 
     def cancel_commitment(self, commitment_id: int, buyer: User) -> ServiceResult:
         """
@@ -700,8 +730,13 @@ class GroupBuyingService(BaseService):
                 with transaction.atomic():
                     old_status = group.status
 
+                    # Check if group already reached target and created orders
+                    if group.status == 'completed':
+                        # Already processed when target was reached - skip
+                        continue
+
                     if group.current_quantity >= group.min_quantity:
-                        # Group succeeded
+                        # Group reached minimum but not target - process now
                         group.status = 'active'
                         self._process_successful_group(group)
                         stats['successful'] += 1
@@ -759,19 +794,31 @@ class GroupBuyingService(BaseService):
         Args:
             group: The successful buying group
         """
-        # This will be implemented with OrderService
-        # For now, just log
         self.log_info(
             f"Processing successful group {group.id}",
             group_id=group.id,
             quantity=group.current_quantity
         )
 
-        # TODO: Implement order creation
-        # from apps.orders.services.order_service import OrderService
-        # order_service = OrderService()
-        # for commitment in group.commitments.filter(status='pending'):
-        #     order_service.create_from_commitment(commitment)
+        # Create orders from all commitments using OrderService
+        from apps.orders.services.order_service import OrderService
+        order_service = OrderService()
+
+        result = order_service.create_orders_from_successful_group(group.id)
+
+        if result.success:
+            self.log_info(
+                f"Successfully created orders for group {group.id}",
+                group_id=group.id,
+                orders_created=result.data['orders_created'],
+                orders_failed=result.data['orders_failed']
+            )
+        else:
+            self.log_error(
+                f"Failed to create orders for group {group.id}",
+                error=result.error,
+                group_id=group.id
+            )
 
     def _process_failed_group(self, group: BuyingGroup) -> None:
         """

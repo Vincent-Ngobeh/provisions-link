@@ -6,6 +6,7 @@ import json
 import logging
 from typing import Dict, Any
 from decimal import Decimal
+from urllib.parse import parse_qs
 
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from channels.db import database_sync_to_async
@@ -32,12 +33,40 @@ class GroupBuyingConsumer(AsyncJsonWebsocketConsumer):
 
     async def connect(self):
         """
-        Accept WebSocket connection if user is authenticated.
+        Accept WebSocket connection if user is authenticated via JWT.
         """
-        self.user = self.scope.get('user')
+        # Extract token from query parameters
+        query_string = self.scope.get('query_string', b'').decode()
+        token = None
 
-        # Accept connection for both authenticated and anonymous users
-        # Anonymous users can view but not participate
+        if query_string:
+            params = parse_qs(query_string)
+            token = params.get('token', [None])[0]
+
+        # If no token provided, reject connection
+        if not token:
+            logger.warning("WebSocket connection rejected: No token provided")
+            await self.close(code=4001)
+            return
+
+        # Validate JWT token and get user
+        try:
+            user_id = await self.validate_token(token)
+            if user_id:
+                self.user = await self.get_user(user_id)
+
+            if not self.user:
+                logger.warning(
+                    f"WebSocket connection rejected: Invalid token or user not found")
+                await self.close(code=4001)
+                return
+
+        except Exception as e:
+            logger.error(f"WebSocket authentication failed: {e}")
+            await self.close(code=4001)
+            return
+
+        # Accept the connection
         await self.accept()
 
         # Send initial connection success
@@ -45,11 +74,14 @@ class GroupBuyingConsumer(AsyncJsonWebsocketConsumer):
             'type': 'connection_established',
             'data': {
                 'message': 'Connected to group buying updates',
-                'authenticated': self.user.is_authenticated if self.user else False
+                'authenticated': True,
+                'user_id': self.user.id,
+                'username': self.user.username
             }
         })
 
-        logger.info(f"WebSocket connection established for user: {self.user}")
+        logger.info(
+            f"WebSocket connection established for user: {self.user.id}")
 
     async def disconnect(self, close_code):
         """
@@ -62,7 +94,8 @@ class GroupBuyingConsumer(AsyncJsonWebsocketConsumer):
                 self.channel_name
             )
             logger.info(
-                f"User {self.user} left group room: {self.group_room_name}")
+                f"User {self.user.id if self.user else 'Unknown'} left group room: {self.group_room_name}"
+            )
 
     async def receive_json(self, content, **kwargs):
         """
@@ -122,7 +155,8 @@ class GroupBuyingConsumer(AsyncJsonWebsocketConsumer):
                     'current_state': group_data
                 }
             })
-            logger.info(f"User {self.user} subscribed to group {new_group_id}")
+            logger.info(
+                f"User {self.user.id} subscribed to group {new_group_id}")
         else:
             await self.send_json({
                 'type': 'error',
@@ -147,7 +181,8 @@ class GroupBuyingConsumer(AsyncJsonWebsocketConsumer):
             })
 
             logger.info(
-                f"User {self.user} unsubscribed from group {self.group_id}")
+                f"User {self.user.id} unsubscribed from group {self.group_id}"
+            )
 
             self.group_id = None
             self.group_room_name = None
@@ -200,6 +235,48 @@ class GroupBuyingConsumer(AsyncJsonWebsocketConsumer):
         })
 
     # Database access methods
+
+    @database_sync_to_async
+    def validate_token(self, token: str) -> int:
+        """
+        Validate JWT token and return user ID.
+
+        Args:
+            token: JWT access token
+
+        Returns:
+            User ID if token is valid, None otherwise
+        """
+        try:
+            from rest_framework_simplejwt.tokens import AccessToken
+
+            access_token = AccessToken(token)
+            user_id = access_token.get('user_id')
+
+            return user_id
+
+        except Exception as e:
+            logger.error(f"Token validation failed: {e}")
+            return None
+
+    @database_sync_to_async
+    def get_user(self, user_id: int):
+        """
+        Fetch user from database.
+
+        Args:
+            user_id: User ID
+
+        Returns:
+            User object or None
+        """
+        try:
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            return User.objects.get(id=user_id)
+        except Exception as e:
+            logger.warning(f"User {user_id} not found: {e}")
+            return None
 
     @database_sync_to_async
     def get_group_data(self, group_id: int) -> Dict[str, Any]:
