@@ -1,11 +1,19 @@
 # apps/vendors/models.py
 
+import uuid
 from decimal import Decimal
 from django.contrib.gis.db import models
-from django.core.validators import MinValueValidator, MaxValueValidator
+from django.core.validators import MinValueValidator, MaxValueValidator, FileExtensionValidator
 from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 from apps.core.models import User
+
+
+def vendor_logo_path(instance, filename):
+    """Generate unique path for vendor logos."""
+    ext = filename.split('.')[-1]
+    filename = f'{uuid.uuid4()}.{ext}'
+    return f'vendors/{instance.id}/logo.{ext}'
 
 
 class Vendor(models.Model):
@@ -120,9 +128,14 @@ class Vendor(models.Model):
         validators=[MinValueValidator(Decimal('0.00'))],
         help_text="Minimum order value in GBP"
     )
-    logo_url = models.URLField(
+
+    # Media - Updated for S3 storage
+    logo = models.ImageField(
+        upload_to=vendor_logo_path,
         blank=True,
-        help_text="URL to vendor logo"
+        null=True,
+        validators=[FileExtensionValidator(['jpg', 'jpeg', 'png', 'svg'])],
+        help_text="Vendor logo"
     )
 
     # Timestamps
