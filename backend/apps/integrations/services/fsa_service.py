@@ -3,6 +3,7 @@ FSA (Food Standards Agency) API integration service.
 Handles fetching and caching food hygiene ratings for UK establishments.
 """
 import requests
+import re
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -48,6 +49,48 @@ class FSAService(BaseService):
             'Accept': 'application/json'
         })
 
+    def _sanitize_cache_key(self, key: str) -> str:
+        """
+        Sanitize cache key to remove characters that cause issues with memcached.
+
+        Args:
+            key: Original cache key
+
+        Returns:
+            Sanitized cache key with spaces and special chars replaced
+        """
+        # Replace spaces with underscores and remove any other problematic characters
+        # Memcached doesn't allow spaces, newlines, carriage returns, or null bytes
+        sanitized = key.replace(' ', '_')
+        sanitized = re.sub(r'[\r\n\x00]', '', sanitized)
+        return sanitized
+
+    def _is_test_fsa_id(self, fsa_id: str) -> bool:
+        """
+        Check if an FSA ID is a test/dummy ID.
+
+        Args:
+            fsa_id: FSA establishment ID
+
+        Returns:
+            True if this appears to be a test ID
+        """
+        if not fsa_id:
+            return True
+
+        # Common test patterns
+        test_patterns = [
+            r'^FSA-TEST',
+            r'^TEST',
+            r'^DUMMY',
+            r'^EXAMPLE',
+            r'^000000',
+            r'^999999'
+        ]
+
+        fsa_id_upper = fsa_id.upper()
+        return any(re.match(pattern, fsa_id_upper) for pattern in test_patterns)
+
     def search_establishment(
         self,
         business_name: str,
@@ -66,13 +109,14 @@ class FSAService(BaseService):
             ServiceResult containing list of matching establishments or error
         """
         try:
-            # Check cache first
+            # Check cache first - sanitize the cache key
             cache_key = self.build_cache_key(
                 self.CACHE_PREFIX,
                 'search',
                 business_name.lower().replace(' ', '_'),
                 postcode.upper()
             )
+            cache_key = self._sanitize_cache_key(cache_key)
 
             cached_result = self.get_from_cache(cache_key)
             if cached_result:
@@ -147,9 +191,21 @@ class FSAService(BaseService):
             ServiceResult containing establishment details or error
         """
         try:
+            # Check if this is a test/dummy FSA ID
+            if self._is_test_fsa_id(fsa_id):
+                self.log_info(
+                    f"Skipping test FSA ID: {fsa_id}",
+                    fsa_id=fsa_id
+                )
+                return ServiceResult.fail(
+                    f"FSA ID {fsa_id} appears to be a test/dummy ID",
+                    error_code="INVALID_TEST_ID"
+                )
+
             # Check cache
             cache_key = self.build_cache_key(
                 self.CACHE_PREFIX, 'establishment', fsa_id)
+            cache_key = self._sanitize_cache_key(cache_key)
             cached_result = self.get_from_cache(cache_key)
 
             if cached_result:
@@ -179,6 +235,24 @@ class FSAService(BaseService):
 
             return ServiceResult.ok(formatted)
 
+        except ExternalServiceError as e:
+            # Handle API errors gracefully
+            self.log_error(
+                f"Error fetching establishment {fsa_id}",
+                exception=e
+            )
+
+            # If it's a 400 error, likely an invalid FSA ID
+            if "400" in str(e):
+                return ServiceResult.fail(
+                    f"Invalid FSA ID: {fsa_id}",
+                    error_code="INVALID_FSA_ID"
+                )
+
+            return ServiceResult.fail(
+                "Failed to fetch establishment",
+                error_code="FETCH_FAILED"
+            )
         except Exception as e:
             self.log_error(
                 f"Error fetching establishment {fsa_id}",
@@ -235,53 +309,67 @@ class FSAService(BaseService):
                     return ServiceResult.ok({
                         'rating': establishment['rating_value'],
                         'rating_date': establishment['rating_date'],
-                        'establishment_id': establishment['fsa_id']
+                        'updated': True
                     })
+                else:
+                    # If FSA ID is invalid/test, mark as unverified and update last checked
+                    if result.error_code in ['INVALID_TEST_ID', 'INVALID_FSA_ID', 'NOT_FOUND']:
+                        vendor.fsa_verified = False
+                        vendor.fsa_last_checked = timezone.now()
+                        vendor.save(update_fields=[
+                                    'fsa_verified', 'fsa_last_checked'])
 
-            # Otherwise search by name and postcode
-            search_result = self.search_establishment(
-                vendor.business_name,
-                vendor.postcode
-            )
+                        self.log_info(
+                            f"Vendor {vendor_id} has invalid FSA ID: {vendor.fsa_establishment_id}",
+                            vendor_id=vendor_id,
+                            fsa_id=vendor.fsa_establishment_id
+                        )
 
-            if not search_result.success:
-                vendor.fsa_last_checked = timezone.now()
-                vendor.save(update_fields=['fsa_last_checked'])
-                return search_result
+                        return ServiceResult.fail(
+                            f"Invalid FSA ID for vendor: {result.error}",
+                            error_code=result.error_code
+                        )
 
-            # Take the first matching result
-            establishments = search_result.data
-            if establishments:
-                best_match = establishments[0]
-
-                vendor.fsa_establishment_id = best_match['fsa_id']
-                vendor.fsa_rating_value = best_match['rating_value']
-                vendor.fsa_rating_date = best_match['rating_date']
-                vendor.fsa_last_checked = timezone.now()
-                vendor.fsa_verified = True
-
-                vendor.save(update_fields=[
-                    'fsa_establishment_id',
-                    'fsa_rating_value',
-                    'fsa_rating_date',
-                    'fsa_last_checked',
-                    'fsa_verified'
-                ])
-
-                self.log_info(
-                    f"Updated FSA rating for vendor {vendor_id}",
-                    vendor_id=vendor_id,
-                    rating=best_match['rating_value']
+            # Try searching by name and postcode
+            if vendor.business_name and vendor.postcode:
+                result = self.search_establishment(
+                    business_name=vendor.business_name,
+                    postcode=vendor.postcode,
+                    max_results=3
                 )
 
-                return ServiceResult.ok({
-                    'rating': best_match['rating_value'],
-                    'rating_date': best_match['rating_date'],
-                    'establishment_id': best_match['fsa_id']
-                })
+                if result.success and result.data:
+                    # Use the first (best) match
+                    establishment = result.data[0]
+
+                    # Update vendor with FSA data
+                    vendor.fsa_establishment_id = establishment['fsa_id']
+                    vendor.fsa_rating_value = establishment['rating_value']
+                    vendor.fsa_rating_date = establishment['rating_date']
+                    vendor.fsa_last_checked = timezone.now()
+                    vendor.fsa_verified = True
+                    vendor.save(update_fields=[
+                        'fsa_establishment_id',
+                        'fsa_rating_value',
+                        'fsa_rating_date',
+                        'fsa_last_checked',
+                        'fsa_verified'
+                    ])
+
+                    return ServiceResult.ok({
+                        'rating': establishment['rating_value'],
+                        'rating_date': establishment['rating_date'],
+                        'updated': True,
+                        'newly_linked': True
+                    })
+
+            # No FSA data found
+            vendor.fsa_last_checked = timezone.now()
+            vendor.fsa_verified = False
+            vendor.save(update_fields=['fsa_last_checked', 'fsa_verified'])
 
             return ServiceResult.fail(
-                "No matching establishment found",
+                "No FSA establishment found for vendor",
                 error_code="NO_MATCH"
             )
 
@@ -297,25 +385,34 @@ class FSAService(BaseService):
                 vendor_id=vendor_id
             )
             return ServiceResult.fail(
-                "Failed to update rating",
+                "Failed to update vendor rating",
                 error_code="UPDATE_FAILED"
             )
 
     def get_rating_distribution(self, postcode_area: str) -> ServiceResult:
         """
-        Get rating distribution for a postcode area (for analytics).
+        Get the distribution of ratings for a postcode area.
 
         Args:
-            postcode_area: First part of postcode (e.g., 'SW1')
+            postcode_area: UK postcode area (e.g., 'SW1A', 'E1')
 
         Returns:
-            ServiceResult containing rating distribution statistics
+            ServiceResult containing rating statistics
         """
         try:
-            # This would fetch all establishments in an area for market analysis
+            # Sanitize cache key
+            cache_key = self.build_cache_key(
+                self.CACHE_PREFIX, 'distribution', postcode_area)
+            cache_key = self._sanitize_cache_key(cache_key)
+
+            cached_result = self.get_from_cache(cache_key)
+            if cached_result:
+                return ServiceResult.ok(cached_result)
+
+            # Search for establishments in this area
             params = {
                 'address': postcode_area,
-                'pageSize': 100,
+                'pageSize': 500,
                 'pageNumber': 1
             }
 
@@ -324,8 +421,8 @@ class FSAService(BaseService):
 
             if not response:
                 return ServiceResult.fail(
-                    "Failed to fetch area data",
-                    error_code="FETCH_FAILED"
+                    "Failed to fetch establishments",
+                    error_code="API_ERROR"
                 )
 
             establishments = response.get('establishments', [])
@@ -360,13 +457,19 @@ class FSAService(BaseService):
 
             average_rating = weighted_sum / total_rated if total_rated > 0 else 0
 
-            return ServiceResult.ok({
+            result_data = {
                 'area': postcode_area,
                 'total_establishments': len(establishments),
                 'total_rated': total_rated,
                 'average_rating': round(average_rating, 2),
                 'distribution': distribution
-            })
+            }
+
+            # Cache for 24 hours
+            cache_timeout = int(self.SEARCH_CACHE_HOURS * 3600)
+            self.set_cache(cache_key, result_data, timeout=cache_timeout)
+
+            return ServiceResult.ok(result_data)
 
         except Exception as e:
             self.log_error(
@@ -413,6 +516,14 @@ class FSAService(BaseService):
             # FSA API returns JSON
             return response.json()
 
+        except requests.exceptions.HTTPError as e:
+            # Log HTTP errors but raise them for proper handling upstream
+            self.log_error(
+                f"FSA API HTTP error for {endpoint}: {e.response.status_code}")
+            raise ExternalServiceError(
+                f"FSA API error: {str(e)}",
+                code=f"HTTP_{e.response.status_code}"
+            )
         except requests.exceptions.Timeout:
             self.log_error(f"FSA API timeout for {endpoint}")
             raise ExternalServiceError("FSA API timeout", code="TIMEOUT")
@@ -518,7 +629,7 @@ class FSAService(BaseService):
             if result.success:
                 stats['updated'] += 1
             else:
-                if result.error_code == 'NO_MATCH':
+                if result.error_code in ['NO_MATCH', 'INVALID_TEST_ID', 'INVALID_FSA_ID']:
                     stats['skipped'] += 1
                 else:
                     stats['failed'] += 1
