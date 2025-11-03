@@ -49,11 +49,24 @@ CHANNEL_LAYERS = {
 CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',')
 CORS_ALLOW_CREDENTIALS = True
 
-# Static files 
-MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+# AWS S3 Configuration for Production
+AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
+AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
 
-# Email configuration 
+# Static files - S3
+AWS_STATIC_BUCKET_NAME = 'provisions-link-static'
+STATICFILES_STORAGE = 'provisions_link.storage_backends.StaticStorage'
+STATIC_URL = f'https://{AWS_STATIC_BUCKET_NAME}.s3.eu-west-2.amazonaws.com/'
+
+# Media files - S3
+AWS_STORAGE_BUCKET_NAME = 'provisions-link-media'
+DEFAULT_FILE_STORAGE = 'provisions_link.storage_backends.MediaStorage'
+MEDIA_URL = f'https://{AWS_STORAGE_BUCKET_NAME}.s3.eu-west-2.amazonaws.com/'
+
+# WhiteNoise for serving static files (fallback)
+MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
+
+# Email configuration
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.sendgrid.net')
 EMAIL_PORT = int(os.environ.get('EMAIL_PORT', 587))
@@ -67,7 +80,7 @@ DEFAULT_FROM_EMAIL = os.environ.get(
 CELERY_BROKER_URL = os.environ.get('REDIS_URL')
 CELERY_RESULT_BACKEND = os.environ.get('REDIS_URL')
 
-# Sentry for error tracking 
+# Sentry for error tracking
 if os.environ.get('SENTRY_DSN'):
     import sentry_sdk
     from sentry_sdk.integrations.django import DjangoIntegration
