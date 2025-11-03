@@ -194,6 +194,8 @@ class GroupCommitment(models.Model):
     stripe_payment_intent_id = models.CharField(
         max_length=200,
         blank=True,
+        null=True,
+        default=None,
         help_text="Stripe payment intent for pre-authorization"
     )
 
