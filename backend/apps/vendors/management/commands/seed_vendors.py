@@ -220,7 +220,8 @@ class Command(BaseCommand):
                 'fsa_last_checked': None,
                 'fsa_verified': False,
                 # Stripe (not started - realistic new vendor)
-                'stripe_account_id': '',
+                # CHANGE: Use None instead of empty string
+                'stripe_account_id': None,
                 'stripe_onboarding_complete': False,
             },
             {
@@ -246,7 +247,8 @@ class Command(BaseCommand):
                 'fsa_last_checked': None,
                 'fsa_verified': False,
                 # Stripe (not started - realistic new vendor)
-                'stripe_account_id': '',
+                # CHANGE: Use None instead of empty string
+                'stripe_account_id': None,
                 'stripe_onboarding_complete': False,
             },
         ]
