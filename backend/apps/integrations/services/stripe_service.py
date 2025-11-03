@@ -446,6 +446,18 @@ class StripeConnectService(BaseService):
         Returns:
             ServiceResult indicating success or failure
         """
+        # CRITICAL FIX: Validate payment_intent_id is not empty/None/whitespace
+        if not payment_intent_id or not payment_intent_id.strip():
+            self.log_warning(
+                "Skipping payment intent cancellation - no intent ID provided",
+                # Shows empty strings/None clearly
+                payment_intent_id=repr(payment_intent_id)
+            )
+            return ServiceResult.ok({
+                'cancelled': False,
+                'message': 'No payment intent to cancel (commitment without payment intent)'
+            })
+
         try:
             payment_intent = stripe.PaymentIntent.cancel(payment_intent_id)
 
@@ -460,7 +472,7 @@ class StripeConnectService(BaseService):
             })
 
         except stripe.error.InvalidRequestError as e:
-            if 'already been canceled' in str(e):
+            if 'already been canceled' in str(e).lower():
                 return ServiceResult.ok({
                     'cancelled': True,
                     'message': 'Already cancelled'
