@@ -2,6 +2,7 @@
 
 from rest_framework import serializers
 from django.db import transaction
+from django.utils import timezone
 from .models import Product, Category, Tag
 from apps.vendors.serializers import VendorListSerializer
 
@@ -42,8 +43,14 @@ class ProductListSerializer(serializers.ModelSerializer):
 
     def get_active_group(self, obj):
         """Return active buying group if exists"""
-        # This will be optimized with prefetch_related
-        group = obj.buying_groups.filter(status='open').first()
+        # FIXED: Only show groups that are:
+        # 1. Status is 'open' (accepting new commitments)
+        # 2. Not expired (expires_at is in the future)
+        group = obj.buying_groups.filter(
+            status='open',
+            expires_at__gt=timezone.now()  # Only non-expired groups
+        ).first()
+
         if group:
             return {
                 'id': group.id,
@@ -69,7 +76,7 @@ class ProductDetailSerializer(serializers.ModelSerializer):
             'price_with_vat', 'unit', 'stock_quantity',
             'low_stock_threshold', 'contains_allergens',
             'allergen_info', 'allergen_statement', 'primary_image',
-            'additional_images', 'is_active', 'created_at'
+            'additional_images', 'is_active', 'created_at', 'in_stock'
         ]
         read_only_fields = ['slug', 'created_at']
 
@@ -187,3 +194,12 @@ class VendorSearchSerializer(serializers.Serializer):
         min_value=1, max_value=5, required=False
     )
     verified_only = serializers.BooleanField(default=False)
+
+
+class ProductImageUploadSerializer(serializers.ModelSerializer):
+    """Serializer specifically for image uploads"""
+    primary_image = serializers.ImageField(required=True)
+
+    class Meta:
+        model = Product
+        fields = ['primary_image']

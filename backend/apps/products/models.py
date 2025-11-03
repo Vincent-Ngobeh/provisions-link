@@ -1,14 +1,22 @@
 # apps/products/models.py
 
+import uuid
 from decimal import Decimal
 from django.contrib.gis.db import models
 from django.contrib.postgres.fields import ArrayField
 from django.contrib.postgres.search import SearchVectorField
 from django.contrib.postgres.indexes import GinIndex
-from django.core.validators import MinValueValidator
+from django.core.validators import MinValueValidator, FileExtensionValidator
 from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 from apps.vendors.models import Vendor
+
+
+def product_image_path(instance, filename):
+    """Generate unique path for product images."""
+    ext = filename.split('.')[-1]
+    filename = f'{uuid.uuid4()}.{ext}'
+    return f'products/{instance.vendor.id}/{filename}'
 
 
 class Category(models.Model):
@@ -176,10 +184,13 @@ class Product(models.Model):
         help_text="Free text allergen statement"
     )
 
-    # Media
-    primary_image = models.URLField(
+    # Media - Updated for S3 storage
+    primary_image = models.ImageField(
+        upload_to=product_image_path,
         blank=True,
-        help_text="Primary product image URL"
+        null=True,
+        validators=[FileExtensionValidator(['jpg', 'jpeg', 'png', 'webp'])],
+        help_text="Primary product image"
     )
     additional_images = models.JSONField(
         default=list,

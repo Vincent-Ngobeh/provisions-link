@@ -7,8 +7,10 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.pagination import PageNumberPagination
+from rest_framework.parsers import MultiPartParser, FormParser
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Q, Prefetch
+from django.utils import timezone
 
 from apps.core.services.base import ValidationError
 
@@ -75,7 +77,10 @@ class ProductViewSet(viewsets.ModelViewSet):
             'tags',
             Prefetch(
                 'buying_groups',
-                queryset=BuyingGroup.objects.filter(status='open'),
+                queryset=BuyingGroup.objects.filter(
+                    status='open',
+                    expires_at__gt=timezone.now()  # Only non-expired groups
+                ),
                 to_attr='active_groups'
             )
         )
@@ -102,6 +107,21 @@ class ProductViewSet(viewsets.ModelViewSet):
         category_id = self.request.query_params.get('category')
         if category_id:
             queryset = queryset.filter(category_id=category_id)
+
+        # FIXED: Filter by price range
+        min_price = self.request.query_params.get('min_price')
+        if min_price:
+            try:
+                queryset = queryset.filter(price__gte=float(min_price))
+            except (ValueError, TypeError):
+                pass  # Ignore invalid price values
+
+        max_price = self.request.query_params.get('max_price')
+        if max_price:
+            try:
+                queryset = queryset.filter(price__lte=float(max_price))
+            except (ValueError, TypeError):
+                pass  # Ignore invalid price values
 
         # Filter by stock status
         in_stock_only = self.request.query_params.get(
@@ -248,6 +268,79 @@ class ProductViewSet(viewsets.ModelViewSet):
         return Response({
             'error': result.error
         }, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'], url_path='upload-image', parser_classes=[MultiPartParser, FormParser])
+    def upload_image(self, request, pk=None):
+        """
+        Upload product image to S3.
+        POST /api/v1/products/{id}/upload-image/
+        Expects multipart/form-data with 'primary_image' field
+        """
+        product = self.get_object()
+
+        # Check if user is the vendor owner or staff
+        if not request.user.is_staff:
+            if not hasattr(request.user, 'vendor') or product.vendor != request.user.vendor:
+                return Response(
+                    {'error': 'You can only upload images for your own products'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+        if 'primary_image' not in request.FILES:
+            return Response(
+                {'error': 'No image file provided'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Get the uploaded file
+        image_file = request.FILES['primary_image']
+
+        # Validate file size (5MB max)
+        if image_file.size > 5 * 1024 * 1024:
+            return Response(
+                {'error': 'Image file size must be less than 5MB'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Delete old image if exists
+        if product.primary_image:
+            product.primary_image.delete(save=False)
+
+        # Save new image (automatically uploads to S3)
+        product.primary_image = image_file
+        product.save()
+
+        return Response({
+            'message': 'Image uploaded successfully',
+            'image_url': product.primary_image.url
+        }, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['delete'], url_path='delete-image')
+    def delete_image(self, request, pk=None):
+        """
+        Delete product image from S3.
+        DELETE /api/v1/products/{id}/delete-image/
+        """
+        product = self.get_object()
+
+        # Check permissions
+        if not request.user.is_staff:
+            if not hasattr(request.user, 'vendor') or product.vendor != request.user.vendor:
+                return Response(
+                    {'error': 'You can only delete images for your own products'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+        if product.primary_image:
+            product.primary_image.delete()
+            product.primary_image = None
+            product.save()
+            return Response({'message': 'Image deleted successfully'})
+
+        return Response(
+            {'error': 'No image to delete'},
+            status=status.HTTP_404_NOT_FOUND
+        )
 
     @action(detail=True, methods=['get'])
     def group_buying(self, request, pk=None):
