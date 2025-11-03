@@ -228,3 +228,4 @@ dist/
 .env.local
 .env.production
 
+backend/fsa_variety_results.txt
