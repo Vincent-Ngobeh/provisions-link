@@ -2,15 +2,15 @@
 ViewSet implementations for integration operations.
 Handles FSA verification, Stripe operations, and geocoding.
 """
-from datetime import timezone
 from rest_framework import viewsets, status
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.views.decorators.csrf import csrf_exempt
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 import stripe
 import json
+import logging
 
 from apps.vendors.models import Vendor
 from apps.orders.models import Order
@@ -18,11 +18,14 @@ from apps.buying_groups.models import GroupCommitment
 from .services.fsa_service import FSAService
 from .services.geocoding_service import GeocodingService
 from .services.stripe_service import StripeConnectService
+from .services.stripe_webhook_handler import StripeWebhookHandler
 from .serializers import (
     StripeAccountLinkSerializer,
     StripePaymentIntentSerializer,
     PaymentMethodSerializer
 )
+
+logger = logging.getLogger(__name__)
 
 
 class FSAIntegrationViewSet(viewsets.ViewSet):
@@ -236,6 +239,9 @@ class StripeIntegrationViewSet(viewsets.ViewSet):
         """
         Create a payment intent for an order or group commitment.
         POST /api/integrations/stripe/create_payment_intent/
+
+        NOTE: This endpoint is deprecated. Use /api/v1/payments/create-intent/ instead.
+        Kept for backward compatibility.
         """
         order_id = request.data.get('order_id')
         group_commitment_id = request.data.get('group_commitment_id')
@@ -336,75 +342,102 @@ class StripeIntegrationViewSet(viewsets.ViewSet):
 def stripe_webhook(request):
     """
     Handle Stripe webhooks.
-    POST /api/integrations/webhooks/stripe/
+    POST /webhooks/stripe/
+
+    This endpoint processes webhook events from Stripe for:
+    - Payment confirmations (payment_intent.succeeded)
+    - Payment failures (payment_intent.payment_failed)
+    - Account updates (account.updated)
+    - Payouts (payout.paid)
+    - Refunds (charge.refunded)
+
+    Security:
+    - Verifies Stripe webhook signature
+    - Always returns 200 to prevent retry loops
+    - Logs all errors internally
+
+    Returns:
+        200: Event received (always, even on errors)
+        400: Invalid signature or payload (only for security issues)
     """
     payload = request.body
     sig_header = request.META.get('HTTP_STRIPE_SIGNATURE')
 
+    # Log webhook received
+    logger.info(f"Stripe webhook received", extra={
+        'content_length': len(payload),
+        'has_signature': bool(sig_header)
+    })
+
+    # Verify signature
     if not sig_header:
-        return Response({
+        logger.error("Stripe webhook missing signature header")
+        return JsonResponse({
             'error': 'Missing stripe signature'
-        }, status=status.HTTP_400_BAD_REQUEST)
+        }, status=400)
 
-    service = StripeConnectService()
-    result = service.verify_webhook_signature(payload, sig_header)
+    # Verify webhook signature using Stripe service
+    stripe_service = StripeConnectService()
+    verify_result = stripe_service.verify_webhook_signature(
+        payload, sig_header)
 
-    if not result.success:
-        return Response({
-            'error': result.error,
-            'error_code': result.error_code
-        }, status=status.HTTP_400_BAD_REQUEST)
+    if not verify_result.success:
+        logger.error(
+            f"Stripe webhook signature verification failed: {verify_result.error}",
+            extra={'error_code': verify_result.error_code}
+        )
+        return JsonResponse({
+            'error': verify_result.error,
+            'error_code': verify_result.error_code
+        }, status=400)
 
-    event = result.data
+    # Get verified event
+    event = verify_result.data
+    event_id = event.get('id')
+    event_type = event.get('type')
 
-    # Handle different event types
+    logger.info(f"Processing Stripe webhook: {event_type}", extra={
+        'event_id': event_id,
+        'event_type': event_type
+    })
+
+    # Delegate to webhook handler
     try:
-        if event['type'] == 'payment_intent.succeeded':
-            handle_payment_intent_succeeded(event['data']['object'])
-        elif event['type'] == 'payment_intent.payment_failed':
-            handle_payment_intent_failed(event['data']['object'])
-        elif event['type'] == 'account.updated':
-            handle_account_updated(event['data']['object'])
-        elif event['type'] == 'payout.paid':
-            handle_payout_paid(event['data']['object'])
+        webhook_handler = StripeWebhookHandler()
+        result = webhook_handler.handle_event(event)
+
+        if result.success:
+            logger.info(
+                f"Successfully processed webhook: {event_type}",
+                extra={
+                    'event_id': event_id,
+                    'result': result.data
+                }
+            )
+        else:
+            logger.error(
+                f"Webhook handler failed: {result.error}",
+                extra={
+                    'event_id': event_id,
+                    'event_type': event_type,
+                    'error_code': result.error_code
+                }
+            )
+
     except Exception as e:
-        # Log error but return 200 to prevent Stripe retries
-        print(f"Webhook handler error: {e}")
+        # CRITICAL: Always return 200 even on errors
+        # This prevents Stripe from retrying and creating loops
+        logger.exception(
+            f"Exception handling webhook {event_type}",
+            extra={
+                'event_id': event_id,
+                'event_type': event_type
+            }
+        )
 
-    return Response({'received': True})
-
-
-def handle_payment_intent_succeeded(payment_intent):
-    """Handle successful payment."""
-    order_id = payment_intent.get('metadata', {}).get('order_id')
-    if order_id:
-        try:
-            order = Order.objects.get(id=order_id)
-            order.status = 'paid'
-            order.paid_at = timezone.now()
-            order.save()
-        except Order.DoesNotExist:
-            pass
-
-
-def handle_payment_intent_failed(payment_intent):
-    """Handle failed payment."""
-    # Log the failure
-    print(f"Payment failed: {payment_intent.get('id')}")
-
-
-def handle_account_updated(account):
-    """Handle Stripe Connect account updates."""
-    try:
-        vendor = Vendor.objects.get(stripe_account_id=account['id'])
-        vendor.stripe_onboarding_complete = account.get(
-            'charges_enabled', False)
-        vendor.save()
-    except Vendor.DoesNotExist:
-        pass
-
-
-def handle_payout_paid(payout):
-    """Handle successful vendor payout."""
-    # Log the payout
-    print(f"Payout completed: {payout.get('id')}")
+    # Always return 200 to acknowledge receipt
+    return JsonResponse({
+        'received': True,
+        'event_id': event_id,
+        'event_type': event_type
+    }, status=200)
