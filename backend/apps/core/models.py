@@ -141,7 +141,7 @@ class Address(models.Model):
         db_table = 'addresses'
         verbose_name = _('Address')
         verbose_name_plural = _('Addresses')
-        unique_together = [['user', 'address_name']]
+        # REMOVED: unique_together constraint to allow multiple addresses with same type
         indexes = [
             models.Index(fields=['user', 'is_default']),
         ]
@@ -150,12 +150,21 @@ class Address(models.Model):
         return f"{self.address_name} - {self.postcode}"
 
     def save(self, *args, **kwargs):
+        # Normalize postcode format
+        if self.postcode:
+            # Remove all spaces and convert to uppercase
+            clean = self.postcode.upper().replace(' ', '')
+            # Add space before last 3 characters for UK format
+            if len(clean) >= 5:
+                self.postcode = f"{clean[:-3]} {clean[-3:]}"
+
         # If this is set as default, unset other defaults for this user
         if self.is_default:
             Address.objects.filter(
                 user=self.user,
                 is_default=True
             ).exclude(pk=self.pk).update(is_default=False)
+
         super().save(*args, **kwargs)
 
 

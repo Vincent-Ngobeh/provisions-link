@@ -232,6 +232,80 @@ class UserViewSet(viewsets.ModelViewSet):
                 'message': 'Logout successful'
             })
 
+    @action(detail=False, methods=['post'])
+    def delete_account(self, request):
+        """
+        Delete user account (GDPR Article 17 - Right to Erasure).
+        POST /api/users/delete_account/
+
+        Requires password confirmation for security.
+        """
+        password = request.data.get('password')
+
+        if not password:
+            return Response({
+                'error': 'Password confirmation required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Verify password
+        if not request.user.check_password(password):
+            return Response({
+                'error': 'Incorrect password'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check if user has active vendor account
+        if hasattr(request.user, 'vendor'):
+            # Check for pending orders
+            from apps.orders.models import Order
+            pending_orders = Order.objects.filter(
+                vendor=request.user.vendor,
+                status__in=['pending', 'paid', 'processing', 'shipped']
+            ).exists()
+
+            if pending_orders:
+                return Response({
+                    'error': 'Cannot delete account with pending vendor orders. Please complete or cancel all orders first.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check for active buyer orders
+        from apps.orders.models import Order
+        active_orders = Order.objects.filter(
+            buyer=request.user,
+            status__in=['pending', 'paid', 'processing', 'shipped']
+        ).exists()
+
+        if active_orders:
+            return Response({
+                'error': 'Cannot delete account with active orders. Please wait for orders to complete or contact support.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check for active group commitments
+        from apps.buying_groups.models import GroupCommitment
+        active_commitments = GroupCommitment.objects.filter(
+            buyer=request.user,
+            status='pending'
+        ).exists()
+
+        if active_commitments:
+            return Response({
+                'error': 'Cannot delete account with active group commitments. Please cancel your commitments first.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Store email for response
+        user_email = request.user.email
+
+        # Perform deletion
+        try:
+            request.user.delete()
+
+            return Response({
+                'message': f'Account {user_email} has been permanently deleted.'
+            })
+        except Exception as e:
+            return Response({
+                'error': 'Failed to delete account. Please contact support.'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 class AddressViewSet(viewsets.ModelViewSet):
     """
