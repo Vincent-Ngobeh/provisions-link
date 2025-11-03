@@ -11,14 +11,20 @@ from django.db.models import Q, Sum, Count
 from django.utils import timezone
 from datetime import datetime, timedelta
 
-from .models import Order, OrderItem
+from .models import Order, OrderItem, Cart, CartItem
 from .serializers import (
     OrderListSerializer,
     OrderDetailSerializer,
     OrderCreateSerializer,
-    OrderStatusUpdateSerializer
+    OrderStatusUpdateSerializer,
+    CartSerializer,
+    CartItemSerializer,
+    CartItemUpdateSerializer,
+    CheckoutSerializer
 )
 from .services.order_service import OrderService
+from apps.products.models import Product
+from apps.vendors.models import Vendor
 
 
 class OrderViewSet(viewsets.ModelViewSet):
@@ -351,4 +357,291 @@ class OrderViewSet(viewsets.ModelViewSet):
         return Response({
             'count': orders.count(),
             'orders': serializer.data
+        })
+
+
+class CartViewSet(viewsets.ViewSet):
+    """
+    ViewSet for shopping cart operations.
+    Handles cart management and checkout.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get_or_create_cart(self, user):
+        """Get or create cart for user."""
+        cart, created = Cart.objects.get_or_create(user=user)
+        return cart
+
+    def list(self, request):
+        """
+        Get user's cart with all items.
+        GET /api/v1/cart/
+        """
+        cart = self.get_or_create_cart(request.user)
+        serializer = CartSerializer(cart)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['post'])
+    def add_item(self, request):
+        """
+        Add item to cart or update quantity if exists.
+        POST /api/v1/cart/add_item/
+        Body: { "product_id": 1, "quantity": 2 }
+        """
+        cart = self.get_or_create_cart(request.user)
+
+        serializer = CartItemSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        product_id = serializer.validated_data['product_id']
+        quantity = serializer.validated_data['quantity']
+
+        # Check if item already in cart
+        existing_item = CartItem.objects.filter(
+            cart=cart,
+            product_id=product_id
+        ).first()
+
+        if existing_item:
+            # Update quantity
+            existing_item.quantity += quantity
+
+            # Validate against stock
+            product = existing_item.product
+            if existing_item.quantity > product.stock_quantity:
+                return Response({
+                    'error': f'Only {product.stock_quantity} units available'
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            existing_item.save()
+            item = existing_item
+            message = f'Updated {product.name} quantity to {existing_item.quantity}'
+        else:
+            # Create new item
+            product = Product.objects.get(id=product_id)
+            item = CartItem.objects.create(
+                cart=cart,
+                product=product,
+                quantity=quantity
+            )
+            message = f'Added {product.name} to cart'
+
+        return Response({
+            'message': message,
+            'item': CartItemSerializer(item).data,
+            'cart_items_count': cart.items_count
+        }, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['patch'])
+    def update_item(self, request):
+        """
+        Update cart item quantity.
+        PATCH /api/v1/cart/update_item/
+        Body: { "item_id": 1, "quantity": 3 }
+        """
+        item_id = request.data.get('item_id')
+
+        if not item_id:
+            return Response({
+                'error': 'item_id is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            cart = Cart.objects.get(user=request.user)
+            item = CartItem.objects.get(id=item_id, cart=cart)
+        except (Cart.DoesNotExist, CartItem.DoesNotExist):
+            return Response({
+                'error': 'Cart item not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = CartItemUpdateSerializer(
+            item,
+            data=request.data,
+            partial=True
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        return Response({
+            'message': 'Cart item updated',
+            'item': CartItemSerializer(item).data
+        })
+
+    @action(detail=False, methods=['delete'])
+    def remove_item(self, request):
+        """
+        Remove item from cart.
+        DELETE /api/v1/cart/remove_item/?item_id=1
+        """
+        item_id = request.query_params.get('item_id')
+
+        if not item_id:
+            return Response({
+                'error': 'item_id parameter required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            cart = Cart.objects.get(user=request.user)
+            item = CartItem.objects.get(id=item_id, cart=cart)
+            product_name = item.product.name
+            item.delete()
+
+            return Response({
+                'message': f'Removed {product_name} from cart',
+                'cart_items_count': cart.items_count
+            })
+        except (Cart.DoesNotExist, CartItem.DoesNotExist):
+            return Response({
+                'error': 'Cart item not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+    @action(detail=False, methods=['delete'])
+    def clear(self, request):
+        """
+        Clear all items from cart.
+        DELETE /api/v1/cart/clear/
+        """
+        try:
+            cart = Cart.objects.get(user=request.user)
+            items_count = cart.items.count()
+            cart.items.all().delete()
+
+            return Response({
+                'message': f'Removed {items_count} items from cart'
+            })
+        except Cart.DoesNotExist:
+            return Response({
+                'message': 'Cart is already empty'
+            })
+
+    @action(detail=False, methods=['post'])
+    def checkout(self, request):
+        """
+        Checkout cart - create orders from cart items.
+        Creates one order per vendor.
+        POST /api/v1/cart/checkout/
+        Body: {
+            "delivery_address_id": 1,
+            "delivery_notes": "Optional notes"
+        }
+        """
+        serializer = CheckoutSerializer(
+            data=request.data,
+            context={'request': request}
+        )
+        serializer.is_valid(raise_exception=True)
+
+        delivery_address_id = serializer.validated_data['delivery_address_id']
+        delivery_notes = serializer.validated_data.get('delivery_notes', '')
+
+        try:
+            cart = Cart.objects.get(user=request.user)
+        except Cart.DoesNotExist:
+            return Response({
+                'error': 'Cart not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        # Group items by vendor
+        items_by_vendor = cart.get_items_by_vendor()
+
+        if not items_by_vendor:
+            return Response({
+                'error': 'Cart is empty'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Create one order per vendor
+        from apps.orders.services.order_service import OrderService
+        order_service = OrderService()
+
+        created_orders = []
+        failed_vendors = []
+
+        for vendor_id, vendor_items in items_by_vendor.items():
+            # Prepare items for order creation
+            order_items_data = [
+                {
+                    'product_id': item.product.id,
+                    'quantity': item.quantity
+                }
+                for item in vendor_items
+            ]
+
+            # Create order
+            result = order_service.create_order(
+                buyer=request.user,
+                vendor_id=vendor_id,
+                delivery_address_id=delivery_address_id,
+                items=order_items_data,
+                delivery_notes=delivery_notes
+            )
+
+            if result.success:
+                order = result.data
+                created_orders.append({
+                    'order_id': order.id,
+                    'reference_number': order.reference_number,
+                    'vendor_name': order.vendor.business_name,
+                    'total': str(order.total),
+                    'items_count': len(vendor_items)
+                })
+
+                # Remove items from cart after successful order
+                for item in vendor_items:
+                    item.delete()
+            else:
+                vendor = Vendor.objects.get(id=vendor_id)
+                failed_vendors.append({
+                    'vendor_name': vendor.business_name,
+                    'error': result.error,
+                    'error_code': result.error_code
+                })
+
+        # Return results
+        if created_orders:
+            return Response({
+                'message': f'Created {len(created_orders)} order(s)',
+                'orders': created_orders,
+                'failed_vendors': failed_vendors if failed_vendors else None
+            }, status=status.HTTP_201_CREATED)
+        else:
+            return Response({
+                'error': 'Failed to create any orders',
+                'failed_vendors': failed_vendors
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['get'])
+    def summary(self, request):
+        """
+        Get cart summary grouped by vendor.
+        GET /api/v1/cart/summary/
+        """
+        cart = self.get_or_create_cart(request.user)
+        items_by_vendor = cart.get_items_by_vendor()
+
+        summary = []
+        for vendor_id, vendor_items in items_by_vendor.items():
+            vendor = vendor_items[0].product.vendor
+
+            vendor_subtotal = sum(item.subtotal for item in vendor_items)
+            vendor_vat = sum(item.vat_amount for item in vendor_items)
+            vendor_total = vendor_subtotal + vendor_vat
+
+            summary.append({
+                'vendor_id': vendor.id,
+                'vendor_name': vendor.business_name,
+                'items_count': len(vendor_items),
+                'subtotal': str(vendor_subtotal),
+                'vat': str(vendor_vat),
+                'total': str(vendor_total),
+                'min_order_value': str(vendor.min_order_value),
+                'meets_minimum': vendor_subtotal >= vendor.min_order_value,
+                'items': CartItemSerializer(vendor_items, many=True).data
+            })
+
+        return Response({
+            'vendors': summary,
+            'total_vendors': len(summary),
+            'grand_total': str(sum(
+                item.total_with_vat for items in items_by_vendor.values() for item in items
+            ))
         })

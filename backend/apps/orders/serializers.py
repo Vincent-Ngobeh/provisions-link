@@ -2,9 +2,12 @@
 
 from rest_framework import serializers
 from django.db import transaction
-from .models import Order, OrderItem
+from .models import Order, OrderItem, Cart, CartItem
+from apps.core.models import Address
 from apps.core.serializers import AddressSerializer
+from apps.vendors.models import Vendor
 from apps.vendors.serializers import VendorListSerializer
+from apps.products.models import Product
 from apps.products.serializers import ProductListSerializer
 
 
@@ -50,7 +53,7 @@ class OrderListSerializer(serializers.ModelSerializer):
         model = Order
         fields = [
             'id', 'reference_number', 'vendor_name', 'total',
-            'status', 'items_count', 'created_at'
+            'status', 'items_count', 'created_at', 'group'  # ADDED: group field
         ]
 
 
@@ -68,7 +71,7 @@ class OrderDetailSerializer(serializers.ModelSerializer):
             'delivery_address', 'items', 'subtotal', 'vat_amount',
             'delivery_fee', 'total', 'marketplace_fee', 'vendor_payout',
             'status', 'delivery_notes', 'created_at', 'paid_at',
-            'delivered_at'
+            'delivered_at', 'group'  # ADDED: group field
         ]
 
 
@@ -80,7 +83,7 @@ class OrderCreateSerializer(serializers.ModelSerializer):
         model = Order
         fields = [
             'vendor', 'delivery_address', 'items',
-            'delivery_notes', 'group'
+            'delivery_notes', 'group'  # Already present ✓
         ]
 
     def validate_items(self, value):
@@ -171,3 +174,155 @@ class OrderStatusUpdateSerializer(serializers.ModelSerializer):
             )
 
         return value
+
+
+class CartItemSerializer(serializers.ModelSerializer):
+    """Cart item with product details."""
+    product = ProductListSerializer(read_only=True)
+    product_id = serializers.IntegerField(write_only=True)
+    subtotal = serializers.DecimalField(
+        max_digits=10, decimal_places=2, read_only=True
+    )
+    # ✅ GOOD: Using SerializerMethodField for vat_amount
+    vat_amount = serializers.SerializerMethodField()
+
+    total_with_vat = serializers.DecimalField(
+        max_digits=10, decimal_places=2, read_only=True
+    )
+
+    class Meta:
+        model = CartItem
+        fields = [
+            'id', 'product', 'product_id', 'quantity',
+            'subtotal', 'vat_amount', 'total_with_vat',
+            'added_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'added_at', 'updated_at']
+
+    def get_vat_amount(self, obj):
+        """Get VAT amount for this item."""
+        return obj.vat_amount
+
+    def validate_product_id(self, value):
+        """Validate product exists and is active."""
+        try:
+            product = Product.objects.get(id=value, is_active=True)
+            if not product.in_stock:
+                raise serializers.ValidationError("Product is out of stock")
+            return value
+        except Product.DoesNotExist:
+            raise serializers.ValidationError("Product not found or inactive")
+
+    def validate_quantity(self, value):
+        """Validate quantity is positive."""
+        if value <= 0:
+            raise serializers.ValidationError("Quantity must be positive")
+        return value
+
+    def validate(self, attrs):
+        """Validate quantity against stock."""
+        product_id = attrs.get('product_id')
+        quantity = attrs.get('quantity', 1)
+
+        if product_id:
+            try:
+                product = Product.objects.get(id=product_id)
+                if quantity > product.stock_quantity:
+                    raise serializers.ValidationError(
+                        f"Only {product.stock_quantity} units available"
+                    )
+            except Product.DoesNotExist:
+                pass  # Already validated in validate_product_id
+
+        return attrs
+
+
+class CartSerializer(serializers.ModelSerializer):
+    """Full cart with items and totals."""
+    items = CartItemSerializer(many=True, read_only=True)
+    items_count = serializers.IntegerField(read_only=True)
+    total_value = serializers.DecimalField(
+        max_digits=10, decimal_places=2, read_only=True
+    )
+    subtotal = serializers.SerializerMethodField()
+    vat_total = serializers.SerializerMethodField()
+    grand_total = serializers.SerializerMethodField()
+    vendors_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Cart
+        fields = [
+            'id', 'items', 'items_count', 'total_value',
+            'subtotal', 'vat_total', 'grand_total',
+            'vendors_count', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def get_subtotal(self, obj):
+        """Calculate cart subtotal."""
+        return sum(item.subtotal for item in obj.items.all())
+
+    def get_vat_total(self, obj):
+        """Calculate total VAT."""
+        return sum(item.vat_amount for item in obj.items.all())
+
+    def get_grand_total(self, obj):
+        """Calculate grand total with VAT."""
+        return sum(item.total_with_vat for item in obj.items.all())
+
+    def get_vendors_count(self, obj):
+        """Count unique vendors in cart."""
+        return obj.items.select_related('product__vendor').values(
+            'product__vendor'
+        ).distinct().count()
+
+
+class CartItemUpdateSerializer(serializers.ModelSerializer):
+    """Update cart item quantity."""
+
+    class Meta:
+        model = CartItem
+        fields = ['quantity']
+
+    def validate_quantity(self, value):
+        """Validate quantity against stock."""
+        if value <= 0:
+            raise serializers.ValidationError("Quantity must be positive")
+
+        # Check stock availability
+        if self.instance:
+            product = self.instance.product
+            if value > product.stock_quantity:
+                raise serializers.ValidationError(
+                    f"Only {product.stock_quantity} units available"
+                )
+
+        return value
+
+
+class CheckoutSerializer(serializers.Serializer):
+    """Checkout validation and order creation."""
+    delivery_address_id = serializers.IntegerField()
+    delivery_notes = serializers.CharField(required=False, allow_blank=True)
+
+    def validate_delivery_address_id(self, value):
+        """Validate delivery address belongs to user."""
+        user = self.context['request'].user
+        try:
+            Address.objects.get(id=value, user=user)
+            return value
+        except Address.DoesNotExist:
+            raise serializers.ValidationError("Address not found")
+
+    def validate(self, attrs):
+        """Validate cart is not empty."""
+        user = self.context['request'].user
+
+        try:
+            cart = Cart.objects.get(user=user)
+            if not cart.items.exists():
+                raise serializers.ValidationError("Cart is empty")
+        except Cart.DoesNotExist:
+            raise serializers.ValidationError("Cart not found")
+
+        return attrs

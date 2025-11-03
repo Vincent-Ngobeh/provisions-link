@@ -349,6 +349,10 @@ class OrderService(BaseService):
                 commitment.status = 'confirmed'
                 commitment.save(update_fields=['status'])
 
+                # Link commitment to order
+                commitment.order = order
+                commitment.save(update_fields=['status', 'order'])
+
                 # Capture payment
                 from apps.integrations.services.stripe_service import StripeConnectService
                 stripe_service = StripeConnectService()

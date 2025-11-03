@@ -6,6 +6,7 @@ from django.contrib.gis.db import models
 from django.core.validators import MinValueValidator
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
+from django.db.models import Sum
 from apps.core.models import User, Address
 from apps.vendors.models import Vendor
 from apps.products.models import Product
@@ -105,6 +106,8 @@ class Order(models.Model):
     stripe_payment_intent_id = models.CharField(
         max_length=200,
         blank=True,
+        null=True,  # ADD: Allow NULL in database
+        default=None,  # ADD: Use NULL as default
         help_text="Stripe payment intent ID"
     )
 
@@ -225,3 +228,103 @@ class OrderItem(models.Model):
     def vat_amount(self):
         """Calculate VAT amount for this item."""
         return self.total_price * self.product.vat_rate
+
+
+class Cart(models.Model):
+    """
+    Shopping cart for B2B buyers.
+    Each user has one cart that persists across sessions.
+    """
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='cart'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'carts'
+        verbose_name = _('Cart')
+        verbose_name_plural = _('Carts')
+
+    def __str__(self):
+        return f"Cart for {self.user.email}"
+
+    @property
+    def items_count(self):
+        """Total number of items in cart."""
+        return self.items.aggregate(total=Sum('quantity'))['total'] or 0
+
+    @property
+    def total_value(self):
+        """Calculate total cart value."""
+        total = Decimal('0.00')
+        for item in self.items.select_related('product'):
+            total += item.product.price * item.quantity
+        return total
+
+    def get_items_by_vendor(self):
+        """
+        Group cart items by vendor for checkout.
+
+        Returns:
+            Dict[vendor_id, List[CartItem]]
+        """
+        from collections import defaultdict
+        items_by_vendor = defaultdict(list)
+
+        for item in self.items.select_related('product__vendor'):
+            items_by_vendor[item.product.vendor.id].append(item)
+
+        return dict(items_by_vendor)
+
+
+class CartItem(models.Model):
+    """
+    Individual items in a shopping cart.
+    """
+    cart = models.ForeignKey(
+        Cart,
+        on_delete=models.CASCADE,
+        related_name='items'
+    )
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name='cart_items'
+    )
+    quantity = models.IntegerField(
+        validators=[MinValueValidator(1)],
+        default=1
+    )
+    added_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'cart_items'
+        verbose_name = _('Cart Item')
+        verbose_name_plural = _('Cart Items')
+        unique_together = [['cart', 'product']]
+        indexes = [
+            models.Index(fields=['cart', 'product']),
+        ]
+        ordering = ['-added_at']
+
+    def __str__(self):
+        return f"{self.quantity}x {self.product.name} in {self.cart.user.email}'s cart"
+
+    @property
+    def subtotal(self):
+        """Calculate item subtotal."""
+        return self.product.price * self.quantity
+
+    @property
+    def vat_amount(self):
+        """Calculate VAT for this item."""
+        return self.subtotal * self.product.vat_rate
+
+    @property
+    def total_with_vat(self):
+        """Calculate total including VAT."""
+        return self.subtotal + self.vat_amount
