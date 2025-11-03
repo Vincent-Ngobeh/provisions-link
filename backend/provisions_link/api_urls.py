@@ -14,7 +14,7 @@ from rest_framework_simplejwt.views import (
 from apps.vendors.views import VendorViewSet
 from apps.products.views import ProductViewSet, CategoryViewSet, TagViewSet
 from apps.buying_groups.views import BuyingGroupViewSet, GroupCommitmentViewSet
-from apps.orders.views import OrderViewSet
+from apps.orders.views import OrderViewSet, CartViewSet
 from apps.core.views import UserViewSet, AddressViewSet
 
 # Create main router
@@ -29,6 +29,7 @@ router.register(r'buying-groups', BuyingGroupViewSet, basename='buyinggroup')
 router.register(r'group-commitments', GroupCommitmentViewSet,
                 basename='groupcommitment')
 router.register(r'orders', OrderViewSet, basename='order')
+router.register(r'cart', CartViewSet, basename='cart')
 router.register(r'users', UserViewSet, basename='user')
 router.register(r'addresses', AddressViewSet, basename='address')
 
@@ -41,6 +42,9 @@ urlpatterns = [
 
     # Router URLs
     path('', include(router.urls)),
+
+    # Payment endpoints
+    path('payments/', include('apps.payments.urls')),
 
     # Custom integration endpoints
     path('integrations/', include('apps.integrations.urls')),
