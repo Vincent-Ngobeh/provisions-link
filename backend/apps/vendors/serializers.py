@@ -13,6 +13,7 @@ class VendorListSerializer(serializers.ModelSerializer):
         max_digits=5, decimal_places=2, read_only=True,
         required=False  # Only present when location filtering
     )
+    logo_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Vendor
@@ -23,12 +24,22 @@ class VendorListSerializer(serializers.ModelSerializer):
             'logo_url', 'distance_km'
         ]
 
+    def get_logo_url(self, obj):
+        """Return the logo URL if it exists."""
+        if obj.logo:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.logo.url)
+            return obj.logo.url
+        return None
+
 
 class VendorDetailSerializer(serializers.ModelSerializer):
     """Detailed vendor profile for vendor page"""
     user = UserPublicSerializer(read_only=True)
     products_count = serializers.IntegerField(read_only=True)
     active_groups_count = serializers.IntegerField(read_only=True)
+    logo_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Vendor
@@ -45,17 +56,27 @@ class VendorDetailSerializer(serializers.ModelSerializer):
             'fsa_rating_value', 'fsa_rating_date', 'created_at'
         ]
 
+    def get_logo_url(self, obj):
+        """Return the logo URL if it exists."""
+        if obj.logo:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.logo.url)
+            return obj.logo.url
+        return None
+
 
 class VendorRegistrationSerializer(serializers.ModelSerializer):
     """Vendor registration with location geocoding"""
     postcode = serializers.CharField(max_length=10)
+    logo = serializers.ImageField(required=False, allow_null=True)
 
     class Meta:
         model = Vendor
         fields = [
             'business_name', 'description', 'phone_number',
             'postcode', 'delivery_radius_km', 'min_order_value',
-            'vat_number', 'logo_url'
+            'vat_number', 'logo'
         ]
 
     def validate_postcode(self, value):

@@ -338,7 +338,6 @@ def update_vendor_commission_rates():
 
         return {
             'reviewed': Vendor.objects.filter(is_approved=True).count(),
-            # FIXED: Changed from 'adjusted' to 'updated'
             'updated': len(updates),
             'changes': updates
         }

@@ -22,6 +22,7 @@ from apps.products.models import Product
 from apps.orders.models import Order, OrderItem
 from apps.buying_groups.models import BuyingGroup
 from apps.core.models import User
+from apps.integrations.services.fsa_service import FSAService
 
 
 class VendorService(BaseService):
