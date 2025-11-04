@@ -1,14 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { categoriesApi, tagsApi } from '@/api/endpoints';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Slider } from '@/components/ui/slider';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Slider } from '@/components/ui/slider';
 import { Separator } from '@/components/ui/separator';
-import { X, Loader2 } from 'lucide-react';
+import { X } from 'lucide-react';
 
 export interface ProductFiltersState {
   categories: number[];
@@ -26,107 +23,71 @@ interface ProductFiltersProps {
   onClose?: () => void;
 }
 
-const ALLERGENS = [
-  'celery',
-  'cereals_containing_gluten',
-  'crustaceans',
-  'eggs',
-  'fish',
-  'lupin',
-  'milk',
-  'molluscs',
-  'mustard',
-  'tree_nuts',
-  'peanuts',
-  'sesame',
-  'soybeans',
-  'sulphur_dioxide',
+// Mock data - replace with actual API calls
+const CATEGORIES = [
+  { id: 1, name: 'Vegetables' },
+  { id: 2, name: 'Fruits' },
+  { id: 3, name: 'Dairy' },
+  { id: 4, name: 'Meat & Poultry' },
+  { id: 5, name: 'Seafood' },
+  { id: 6, name: 'Bakery' },
 ];
 
-// FIX 9: Reduced price range to £0-£50 (from £200)
-const PRICE_MIN = 0;
-const PRICE_MAX = 50;
+const ALLERGENS = [
+  'gluten',
+  'dairy',
+  'eggs',
+  'nuts',
+  'soy',
+  'fish',
+  'shellfish',
+];
+
+const FSA_RATINGS = [
+  { value: 5, label: '5 - Very Good' },
+  { value: 4, label: '4 - Good' },
+  { value: 3, label: '3 - Generally Satisfactory' },
+];
 
 export function ProductFilters({ filters, onChange, onClose }: ProductFiltersProps) {
-  const [localFilters, setLocalFilters] = useState(filters);
-  
-  // Use ref to avoid onChange in dependencies
-  const onChangeRef = useRef(onChange);
-
-  // Update ref when callback changes
-  useEffect(() => {
-    onChangeRef.current = onChange;
-  }, [onChange]);
-
-  // Sync localFilters with parent filters prop
-  useEffect(() => {
-    setLocalFilters(filters);
-  }, [filters]);
-
-  // FIXED: Debounced notification to parent
-  // This prevents infinite loops when price slider is moved rapidly
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      onChangeRef.current(localFilters);
-    }, 300); // 300ms debounce
-
-    return () => clearTimeout(timeoutId);
-  }, [localFilters]);
-
-  // Fetch categories
-  const { data: categoriesData, isLoading: categoriesLoading } = useQuery({
-    queryKey: ['categories'],
-    queryFn: () => categoriesApi.list(),
-  });
-
-  // Fetch tags
-  const { data: tagsData, isLoading: tagsLoading } = useQuery({
-    queryKey: ['tags'],
-    queryFn: () => tagsApi.list(),
-  });
-
   const handleCategoryToggle = (categoryId: number) => {
-    setLocalFilters(prev => ({
-      ...prev,
-      categories: prev.categories.includes(categoryId)
-        ? prev.categories.filter(id => id !== categoryId)
-        : [...prev.categories, categoryId],
-    }));
-  };
-
-  const handleTagToggle = (tagId: number) => {
-    setLocalFilters(prev => ({
-      ...prev,
-      tags: prev.tags.includes(tagId)
-        ? prev.tags.filter(id => id !== tagId)
-        : [...prev.tags, tagId],
-    }));
+    const newCategories = filters.categories.includes(categoryId)
+      ? filters.categories.filter(id => id !== categoryId)
+      : [...filters.categories, categoryId];
+    
+    onChange({ ...filters, categories: newCategories });
   };
 
   const handleAllergenToggle = (allergen: string) => {
-    setLocalFilters(prev => ({
-      ...prev,
-      allergenFree: prev.allergenFree.includes(allergen)
-        ? prev.allergenFree.filter(a => a !== allergen)
-        : [...prev.allergenFree, allergen],
-    }));
+    const newAllergens = filters.allergenFree.includes(allergen)
+      ? filters.allergenFree.filter(a => a !== allergen)
+      : [...filters.allergenFree, allergen];
+    
+    onChange({ ...filters, allergenFree: newAllergens });
   };
 
-  // FIXED: Handle range slider with two values [min, max]
   const handlePriceChange = (values: number[]) => {
-    setLocalFilters(prev => ({
-      ...prev,
-      minPrice: values[0],
-      maxPrice: values[1],
-    }));
+    // Update filters directly without intermediate state
+    onChange({ 
+      ...filters, 
+      minPrice: values[0], 
+      maxPrice: values[1] 
+    });
   };
 
-  const clearAllFilters = () => {
-    setLocalFilters({
+  const handleFsaRatingChange = (rating: number) => {
+    onChange({ 
+      ...filters, 
+      minFsaRating: filters.minFsaRating === rating ? undefined : rating 
+    });
+  };
+
+  const handleClearAll = () => {
+    onChange({
       categories: [],
       tags: [],
-      minPrice: PRICE_MIN,
-      maxPrice: PRICE_MAX,
+      minPrice: 0,
+      maxPrice: 50,
       inStockOnly: false,
       allergenFree: [],
       minFsaRating: undefined,
@@ -134,29 +95,20 @@ export function ProductFilters({ filters, onChange, onClose }: ProductFiltersPro
   };
 
   const activeFiltersCount = 
-    localFilters.categories.length +
-    localFilters.tags.length +
-    localFilters.allergenFree.length +
-    (localFilters.inStockOnly ? 1 : 0) +
-    (localFilters.minFsaRating ? 1 : 0) +
-    ((localFilters.minPrice > PRICE_MIN || localFilters.maxPrice < PRICE_MAX) ? 1 : 0);
-
-  // Safely extract arrays from API responses
-  const categories = Array.isArray(categoriesData?.data) 
-    ? categoriesData.data 
-    : ((categoriesData?.data as any)?.results || []);
-  
-  const tags = Array.isArray(tagsData?.data) 
-    ? tagsData.data 
-    : ((tagsData?.data as any)?.results || []);
+    filters.categories.length +
+    filters.tags.length +
+    filters.allergenFree.length +
+    (filters.inStockOnly ? 1 : 0) +
+    (filters.minFsaRating ? 1 : 0) +
+    ((filters.minPrice > 0 || filters.maxPrice < 50) ? 1 : 0);
 
   return (
-    <Card className="h-fit">
-      <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle className="text-lg">Filters</CardTitle>
+    <Card className="h-fit text-sm">
+      <CardHeader className="flex flex-row items-center justify-between py-3 px-4">
+        <CardTitle className="text-base">Filters</CardTitle>
         <div className="flex items-center gap-2">
           {activeFiltersCount > 0 && (
-            <Badge variant="secondary">{activeFiltersCount} active</Badge>
+            <Badge variant="secondary" className="text-xs">{activeFiltersCount}</Badge>
           )}
           {onClose && (
             <Button variant="ghost" size="sm" onClick={onClose}>
@@ -166,144 +118,39 @@ export function ProductFilters({ filters, onChange, onClose }: ProductFiltersPro
         </div>
       </CardHeader>
 
-      <CardContent className="space-y-6">
+      <CardContent className="space-y-4 px-4 pb-4">
         {/* Clear All Button */}
         {activeFiltersCount > 0 && (
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={clearAllFilters}
-            className="w-full"
-          >
-            Clear All Filters
-          </Button>
+          <>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={handleClearAll}
+              className="w-full"
+            >
+              Clear All Filters
+            </Button>
+            <Separator />
+          </>
         )}
 
         {/* Categories */}
-        <div className="space-y-3">
-          <Label className="text-sm font-semibold">Categories</Label>
-          {categoriesLoading ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Loading categories...
-            </div>
-          ) : categories.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No categories available</p>
-          ) : (
-            <div className="space-y-2 max-h-48 overflow-y-auto">
-              {categories.map((category: any) => (
-                <div key={category.id} className="flex items-center space-x-2">
-                  <Checkbox
-                    id={`category-${category.id}`}
-                    checked={localFilters.categories.includes(category.id)}
-                    onCheckedChange={() => handleCategoryToggle(category.id)}
-                  />
-                  <Label
-                    htmlFor={`category-${category.id}`}
-                    className="text-sm font-normal cursor-pointer"
-                  >
-                    {category.name}
-                  </Label>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <Separator />
-
-        {/* FIX 9: Price Range updated to £0-£50 */}
-        <div className="space-y-4">
-          <Label className="text-sm font-semibold">
-            Price Range (per unit)
-          </Label>
-          <div className="flex items-center justify-between text-sm font-medium">
-            <span>£{localFilters.minPrice}</span>
-            <span>£{localFilters.maxPrice}</span>
-          </div>
-          <Slider
-            value={[localFilters.minPrice, localFilters.maxPrice]}
-            onValueChange={handlePriceChange}
-            min={PRICE_MIN}
-            max={PRICE_MAX}
-            step={5}
-            minStepsBetweenThumbs={1}
-            className="w-full"
-          />
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>£{PRICE_MIN}</span>
-            <span>£{PRICE_MAX}+</span>
-          </div>
-        </div>
-
-        <Separator />
-
-        {/* Stock Status */}
-        <div className="flex items-center space-x-2">
-          <Checkbox
-            id="in-stock"
-            checked={localFilters.inStockOnly}
-            onCheckedChange={(checked) =>
-              setLocalFilters(prev => ({ ...prev, inStockOnly: !!checked }))
-            }
-          />
-          <Label htmlFor="in-stock" className="text-sm cursor-pointer">
-            In Stock Only
-          </Label>
-        </div>
-
-        <Separator />
-
-        {/* Tags */}
-        <div className="space-y-3">
-          <Label className="text-sm font-semibold">Tags</Label>
-          {tagsLoading ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Loading tags...
-            </div>
-          ) : tags.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No tags available</p>
-          ) : (
-            <div className="space-y-2 max-h-48 overflow-y-auto">
-              {tags.map((tag: any) => (
-                <div key={tag.id} className="flex items-center space-x-2">
-                  <Checkbox
-                    id={`tag-${tag.id}`}
-                    checked={localFilters.tags.includes(tag.id)}
-                    onCheckedChange={() => handleTagToggle(tag.id)}
-                  />
-                  <Label
-                    htmlFor={`tag-${tag.id}`}
-                    className="text-sm font-normal cursor-pointer"
-                  >
-                    {tag.name}
-                  </Label>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <Separator />
-
-        {/* Allergen Free */}
-        <div className="space-y-3">
-          <Label className="text-sm font-semibold">Allergen Free</Label>
-          <div className="space-y-2 max-h-48 overflow-y-auto">
-            {ALLERGENS.map((allergen) => (
-              <div key={allergen} className="flex items-center space-x-2">
+        <div className="space-y-2">
+          <Label className="text-sm font-medium">Categories</Label>
+          <div className="space-y-1.5">
+            {CATEGORIES.map((category) => (
+              <div key={category.id} className="flex items-center space-x-2">
                 <Checkbox
-                  id={`allergen-${allergen}`}
-                  checked={localFilters.allergenFree.includes(allergen)}
-                  onCheckedChange={() => handleAllergenToggle(allergen)}
+                  id={`category-${category.id}`}
+                  checked={filters.categories.includes(category.id)}
+                  onCheckedChange={() => handleCategoryToggle(category.id)}
                 />
-                <Label
-                  htmlFor={`allergen-${allergen}`}
-                  className="text-sm font-normal cursor-pointer"
+                <label
+                  htmlFor={`category-${category.id}`}
+                  className="text-xs font-normal leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
                 >
-                  {allergen.replace(/_/g, ' ')}
-                </Label>
+                  {category.name}
+                </label>
               </div>
             ))}
           </div>
@@ -311,28 +158,90 @@ export function ProductFilters({ filters, onChange, onClose }: ProductFiltersPro
 
         <Separator />
 
-        {/* FSA Rating */}
+        {/* Price Range */}
         <div className="space-y-3">
-          <Label className="text-sm font-semibold">Minimum FSA Rating</Label>
-          <div className="space-y-2">
-            {[5, 4, 3].map((rating) => (
-              <div key={rating} className="flex items-center space-x-2">
+          <Label className="text-sm font-medium">Price Range</Label>
+          <div className="pt-2 pb-1">
+            <Slider
+              value={[filters.minPrice, filters.maxPrice]}
+              min={0}
+              max={50}
+              step={1}
+              onValueChange={handlePriceChange}
+              className="w-full"
+            />
+          </div>
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>£{filters.minPrice}</span>
+            <span>£{filters.maxPrice}</span>
+          </div>
+        </div>
+
+        <Separator />
+
+        {/* Stock Status */}
+        <div className="space-y-2">
+          <Label className="text-sm font-medium">Availability</Label>
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id="in-stock"
+              checked={filters.inStockOnly}
+              onCheckedChange={(checked) => 
+                onChange({ ...filters, inStockOnly: checked as boolean })
+              }
+            />
+            <label
+              htmlFor="in-stock"
+              className="text-xs font-normal leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+            >
+              In stock only
+            </label>
+          </div>
+        </div>
+
+        <Separator />
+
+        {/* FSA Rating */}
+        <div className="space-y-2">
+          <Label className="text-sm font-medium">Minimum FSA Rating</Label>
+          <div className="space-y-1.5">
+            {FSA_RATINGS.map((rating) => (
+              <div key={rating.value} className="flex items-center space-x-2">
                 <Checkbox
-                  id={`fsa-${rating}`}
-                  checked={localFilters.minFsaRating === rating}
-                  onCheckedChange={(checked) =>
-                    setLocalFilters(prev => ({
-                      ...prev,
-                      minFsaRating: checked ? rating : undefined,
-                    }))
-                  }
+                  id={`fsa-${rating.value}`}
+                  checked={filters.minFsaRating === rating.value}
+                  onCheckedChange={() => handleFsaRatingChange(rating.value)}
                 />
-                <Label
-                  htmlFor={`fsa-${rating}`}
-                  className="text-sm font-normal cursor-pointer"
+                <label
+                  htmlFor={`fsa-${rating.value}`}
+                  className="text-xs font-normal leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
                 >
-                  {rating}+ Stars
-                </Label>
+                  {rating.label}
+                </label>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <Separator />
+
+        {/* Allergen Free */}
+        <div className="space-y-2">
+          <Label className="text-sm font-medium">Allergen Free</Label>
+          <div className="space-y-1.5">
+            {ALLERGENS.map((allergen) => (
+              <div key={allergen} className="flex items-center space-x-2">
+                <Checkbox
+                  id={`allergen-${allergen}`}
+                  checked={filters.allergenFree.includes(allergen)}
+                  onCheckedChange={() => handleAllergenToggle(allergen)}
+                />
+                <label
+                  htmlFor={`allergen-${allergen}`}
+                  className="text-xs font-normal leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer capitalize"
+                >
+                  {allergen}
+                </label>
               </div>
             ))}
           </div>

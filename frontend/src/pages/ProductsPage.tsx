@@ -29,7 +29,7 @@ export function ProductsPage() {
     minFsaRating: searchParams.get('minFsa') ? Number(searchParams.get('minFsa')) : undefined,
   });
 
-  // Build API params from filters
+  // Build API params from filters - include ALL filters
   const apiParams = useMemo(() => {
     const params: any = {
       page,
@@ -37,20 +37,51 @@ export function ProductsPage() {
     };
 
     if (searchQuery) params.search = searchQuery;
-    if (filters.categories.length > 0) params.category = filters.categories[0];
     
+    // Category - for both GET and POST endpoints
+    if (filters.categories.length > 0) {
+      params.category = filters.categories[0];  // For GET list
+      params.category_id = filters.categories[0];  // For POST search (backend expects this)
+    }
+    
+    // Tags - only supported via POST search
+    if (filters.tags.length > 0) params.tags = filters.tags;
+    
+    // Price range
     if (filters.minPrice > 0) params.min_price = filters.minPrice;
     if (filters.maxPrice < 50) params.max_price = filters.maxPrice;
     
+    // Stock status
     if (filters.inStockOnly) params.in_stock_only = true;
+    
+    // Allergens - only supported via POST search
+    if (filters.allergenFree.length > 0) params.allergen_free = filters.allergenFree;
+    
+    // FSA Rating - only supported via POST search
     if (filters.minFsaRating) params.min_fsa_rating = filters.minFsaRating;
 
     return params;
   }, [page, searchQuery, filters]);
 
+  // Check if we need advanced search endpoint
+  const needsSearchEndpoint = 
+    filters.tags.length > 0 || 
+    filters.allergenFree.length > 0 || 
+    filters.minFsaRating !== undefined;
+
+  // Use appropriate endpoint based on filters
   const { data, isLoading, error } = useQuery({
-    queryKey: ['products', apiParams],
-    queryFn: () => productsApi.list(apiParams),
+    queryKey: ['products', apiParams, needsSearchEndpoint],
+    queryFn: async () => {
+      if (needsSearchEndpoint) {
+        // Use POST search for advanced filters
+        const response = await productsApi.search(apiParams);
+        return response;
+      } else {
+        // Use GET list for simple filters
+        return productsApi.list(apiParams);
+      }
+    },
   });
 
   const handleSearch = (e: React.FormEvent) => {
@@ -90,15 +121,13 @@ export function ProductsPage() {
     ((filters.minPrice > 0 || filters.maxPrice < 50) ? 1 : 0);
 
   return (
-    <div className="space-y-6">
+    <div className="container mx-auto px-4 py-6 space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Products</h1>
-          <p className="text-muted-foreground">
-            Browse products from verified UK suppliers
-          </p>
-        </div>
+      <div>
+        <h1 className="text-2xl font-bold mb-1">Products</h1>
+        <p className="text-sm text-muted-foreground">
+          Browse products from verified UK suppliers
+        </p>
       </div>
 
       {/* Search Bar */}
@@ -152,11 +181,16 @@ export function ProductsPage() {
         </Sheet>
       </form>
 
-      {/* Results Count */}
+      {/* Results Count with endpoint indicator */}
       {data && (
-        <div className="text-sm text-muted-foreground">
+        <div className="text-xs text-muted-foreground pl-1">
           {data.data.count} products found
           {activeFiltersCount > 0 && ` • ${activeFiltersCount} filter${activeFiltersCount !== 1 ? 's' : ''} applied`}
+          {needsSearchEndpoint && (
+            <span className="ml-2 text-blue-600">
+              • Advanced search
+            </span>
+          )}
         </div>
       )}
 
@@ -170,24 +204,24 @@ export function ProductsPage() {
       )}
 
       {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
         {/* Desktop Filters Sidebar */}
-        <aside className="hidden lg:block">
+        <aside className="hidden lg:block lg:col-span-1">
           <ProductFilters filters={filters} onChange={handleFiltersChange} />
         </aside>
 
         {/* Products Grid */}
-        <div className="lg:col-span-3 space-y-6">
+        <div className="lg:col-span-4 space-y-4">
           {/* Loading State */}
           {isLoading && (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {[...Array(6)].map((_, i) => (
-                <Card key={i}>
+                <Card key={i} className="h-fit">
                   <Skeleton className="aspect-square" />
-                  <CardContent className="pt-4 space-y-2">
-                    <Skeleton className="h-6 w-3/4" />
+                  <CardContent className="pt-3 space-y-2">
+                    <Skeleton className="h-5 w-3/4" />
                     <Skeleton className="h-4 w-1/2" />
-                    <Skeleton className="h-8 w-1/3" />
+                    <Skeleton className="h-6 w-1/3" />
                   </CardContent>
                 </Card>
               ))}
@@ -197,7 +231,7 @@ export function ProductsPage() {
           {/* Products Grid */}
           {data && (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {data.data.results.map((product) => (
                   <ProductCard key={product.id} product={product} />
                 ))}
