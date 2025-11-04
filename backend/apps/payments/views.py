@@ -7,6 +7,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.db import transaction
 import stripe
+import logging
 
 from apps.orders.models import Order
 from apps.integrations.services.stripe_service import StripeConnectService
@@ -16,6 +17,8 @@ from .serializers import (
     PaymentStatusSerializer,
     PaymentErrorSerializer
 )
+
+logger = logging.getLogger(__name__)
 
 
 class CreatePaymentIntentView(views.APIView):
@@ -81,23 +84,45 @@ class CreatePaymentIntentView(views.APIView):
         order_ids_str = ','.join(str(o.id) for o in orders)
 
         try:
-            # Create payment intent with Stripe
-            payment_intent = stripe.PaymentIntent.create(
-                amount=total_pence,
-                currency='gbp',
-                application_fee_amount=commission_pence,
-                transfer_data={
-                    'destination': vendor.stripe_account_id,
-                },
-                metadata={
+            # Check if we're in test mode and vendor has a test placeholder account
+            is_test_mode = not stripe.api_key.startswith('sk_live_')
+            is_placeholder_account = (
+                vendor.stripe_account_id and
+                ('test' in vendor.stripe_account_id.lower() or
+                 not vendor.stripe_account_id.startswith('acct_'))
+            )
+
+            # Create payment intent parameters
+            payment_intent_params = {
+                'amount': total_pence,
+                'currency': 'gbp',
+                'metadata': {
                     'order_ids': order_ids_str,
                     'vendor_id': str(vendor.id),
                     'buyer_id': str(request.user.id),
                     'platform': 'provisions_link'
                 },
-                description=f"Orders: {', '.join(o.reference_number for o in orders)}",
-                receipt_email=request.user.email
-            )
+                'description': f"Orders: {', '.join(o.reference_number for o in orders)}",
+                'receipt_email': request.user.email
+            }
+
+            # Only add Connect-specific fields if vendor has a REAL Stripe account
+            if vendor.stripe_account_id and not is_placeholder_account:
+                payment_intent_params['application_fee_amount'] = commission_pence
+                payment_intent_params['transfer_data'] = {
+                    'destination': vendor.stripe_account_id,
+                }
+            elif is_test_mode:
+                # In test mode with placeholder account, just log the commission
+                # but don't try to transfer to a non-existent account
+                logger.info(
+                    f"Test mode: Would charge {total_pence} pence with "
+                    f"{commission_pence} pence commission to vendor {vendor.id}"
+                )
+
+            # Create payment intent with Stripe
+            payment_intent = stripe.PaymentIntent.create(
+                **payment_intent_params)
 
             # Update orders with payment intent ID
             with transaction.atomic():
@@ -132,6 +157,32 @@ class CreatePaymentIntentView(views.APIView):
             return Response(
                 output_serializer.data,
                 status=status.HTTP_200_OK
+            )
+
+        except stripe.error.InvalidRequestError as e:
+            # Handle specific Stripe errors (like invalid account)
+            error_message = str(e)
+
+            if 'No such destination' in error_message or 'No such account' in error_message:
+                error_serializer = PaymentErrorSerializer({
+                    'error': f'The vendor ({vendor.business_name}) has not completed their Stripe setup. Please contact support.',
+                    'error_code': 'INVALID_VENDOR_ACCOUNT',
+                    'details': {
+                        'type': 'InvalidRequestError',
+                        'vendor_id': vendor.id,
+                        'vendor_name': vendor.business_name
+                    }
+                })
+            else:
+                error_serializer = PaymentErrorSerializer({
+                    'error': error_message,
+                    'error_code': 'STRIPE_ERROR',
+                    'details': {'type': 'InvalidRequestError'}
+                })
+
+            return Response(
+                error_serializer.data,
+                status=status.HTTP_400_BAD_REQUEST
             )
 
         except stripe.error.StripeError as e:
