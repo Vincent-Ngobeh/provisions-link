@@ -212,25 +212,38 @@ class UserViewSet(viewsets.ModelViewSet):
             'settings': serializer.data
         })
 
-    @action(detail=False, methods=['post'])
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
     def logout(self, request):
         """
-        Logout user (blacklist refresh token).
+        Logout user by blacklisting refresh token.
         POST /api/users/logout/
         """
         try:
             refresh_token = request.data.get('refresh_token')
-            if refresh_token:
-                token = RefreshToken(refresh_token)
-                token.blacklist()
 
-            return Response({
-                'message': 'Logout successful'
-            })
-        except Exception:
-            return Response({
-                'message': 'Logout successful'
-            })
+            if not refresh_token:
+                return Response(
+                    {'error': 'refresh_token is required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Blacklist the token
+            token = RefreshToken(refresh_token)
+
+            # Check if already blacklisted or handle other errors
+            try:
+                token.blacklist()
+            except Exception as e:
+                # Token already blacklisted or other error - ignore
+                pass
+
+            return Response({'message': 'Logged out successfully'})
+
+        except Exception as e:
+            return Response(
+                {'error': 'Invalid token'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
     @action(detail=False, methods=['post'])
     def delete_account(self, request):
