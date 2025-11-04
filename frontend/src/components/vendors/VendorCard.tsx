@@ -13,6 +13,8 @@ import {
   TrendingUp,
   CheckCircle,
   ArrowRight,
+  ShieldCheck,
+  CreditCard,
 } from 'lucide-react';
 
 interface VendorCardProps {
@@ -51,12 +53,28 @@ export function VendorCard({ vendor, onClick }: VendorCardProps) {
                 <span className="text-xs">({vendor.distance_km}km away)</span>
               )}
             </div>
-            {vendor.fsa_verified && (
-              <Badge variant="outline" className="border-green-500 text-green-700">
-                <CheckCircle className="h-3 w-3 mr-1" />
-                FSA Verified
-              </Badge>
-            )}
+            
+            {/* Verification Badges */}
+            <div className="flex flex-wrap gap-1.5">
+              {vendor.is_approved && (
+                <Badge variant="outline" className="border-blue-500 text-blue-700 text-xs">
+                  <ShieldCheck className="h-3 w-3 mr-1" />
+                  Approved
+                </Badge>
+              )}
+              {vendor.stripe_onboarding_complete && (
+                <Badge variant="outline" className="border-purple-500 text-purple-700 text-xs">
+                  <CreditCard className="h-3 w-3 mr-1" />
+                  Payments Enabled
+                </Badge>
+              )}
+              {vendor.fsa_rating_value !== null && vendor.fsa_rating_value !== undefined && (
+                <Badge variant="outline" className="border-green-500 text-green-700 text-xs">
+                  <CheckCircle className="h-3 w-3 mr-1" />
+                  FSA Verified
+                </Badge>
+              )}
+            </div>
           </div>
         </div>
 

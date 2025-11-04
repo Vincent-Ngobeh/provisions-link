@@ -71,9 +71,11 @@ export default function VendorsPage() {
   // Calculate statistics
   const stats = {
     total: vendors.length,
-    verified: vendors.filter((v: Vendor) => v.fsa_verified).length,
+    verified: vendors.filter((v: Vendor) => v.fsa_rating_value !== null && v.fsa_rating_value !== undefined).length,
     avgRating:
-      vendors.reduce((sum: number, v: Vendor) => sum + (v.fsa_rating_value || 0), 0) / vendors.length || 0,
+      vendors.length > 0
+        ? vendors.reduce((sum: number, v: Vendor) => sum + (v.fsa_rating_value || 0), 0) / vendors.filter(v => v.fsa_rating_value !== null).length || 0
+        : 0,
   };
 
   return (
