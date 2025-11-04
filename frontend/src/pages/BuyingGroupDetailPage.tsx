@@ -349,6 +349,39 @@ export default function BuyingGroupDetailPage() {
 
         {/* Sidebar */}
         <div className="space-y-6">
+          {/* Vendor Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Store className="h-4 w-4" />
+                Vendor
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div>
+                <p className="font-medium">{group.vendor_name}</p>
+              </div>
+              
+              {/* Vendor Location */}
+              <div className="pt-2 border-t">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+                  <MapPin className="h-4 w-4" />
+                  <span>Location</span>
+                </div>
+                <p className="text-sm">{group.area_name}</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Delivery radius: {group.radius_km}km from center
+                </p>
+              </div>
+
+              <div className="pt-2 border-t">
+                <p className="text-sm text-muted-foreground mb-1">
+                  💡 Your postcode must be within {group.radius_km}km of this location to join
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Pricing Card */}
           <Card>
             <CardHeader>

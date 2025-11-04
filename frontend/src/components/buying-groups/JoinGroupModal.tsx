@@ -111,6 +111,16 @@ export function JoinGroupModal({
             </div>
             
             <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Vendor Location</span>
+              <span className="font-medium">{group.vendor_name}</span>
+            </div>
+            
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Delivery Area</span>
+              <span className="font-medium text-xs">{group.area_name}</span>
+            </div>
+            
+            <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">Discounted Price</span>
               <div className="flex items-center gap-2">
                 <span className="text-sm line-through text-muted-foreground">
@@ -164,7 +174,7 @@ export function JoinGroupModal({
               required
             />
             <p className="text-xs text-muted-foreground">
-              Must be within {group.radius_km}km of {group.area_name}
+              Must be within {group.radius_km}km of vendor area ({group.area_name})
             </p>
           </div>
 
