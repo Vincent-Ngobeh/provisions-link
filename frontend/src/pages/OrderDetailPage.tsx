@@ -39,6 +39,7 @@ import {
   Calendar,
   AlertCircle,
   XCircle,
+  AlertTriangle,
 } from 'lucide-react';
 
 export default function OrderDetailPage() {
@@ -192,17 +193,30 @@ export default function OrderDetailPage() {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Vendor Info */}
                 <div>
                   <div className="flex items-center gap-2 mb-2">
                     <Store className="h-4 w-4 text-muted-foreground" />
                     <span className="text-sm font-medium">Vendor</span>
                   </div>
                   <p className="text-sm">{order.vendor.business_name}</p>
+                  
+                  {/* Warning for unverified vendors */}
+                  {(!order.vendor.is_approved || !order.vendor.stripe_onboarding_complete) && (
+                    <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-800 flex items-start gap-2">
+                      <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                      <span>
+                        This order was placed before vendor verification requirements. You can still cancel it.
+                      </span>
+                    </div>
+                  )}
+                  
                   {order.vendor.phone_number && (
-                    <p className="text-sm text-muted-foreground">{order.vendor.phone_number}</p>
+                    <p className="text-sm text-muted-foreground mt-1">{order.vendor.phone_number}</p>
                   )}
                 </div>
 
+                {/* Delivery Address */}
                 <div>
                   <div className="flex items-center gap-2 mb-2">
                     <MapPin className="h-4 w-4 text-muted-foreground" />

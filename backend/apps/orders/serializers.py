@@ -53,13 +53,13 @@ class OrderListSerializer(serializers.ModelSerializer):
         model = Order
         fields = [
             'id', 'reference_number', 'vendor_name', 'total',
-            'status', 'items_count', 'created_at', 'group'  # ADDED: group field
+            'status', 'items_count', 'created_at', 'group'
         ]
 
 
 class OrderDetailSerializer(serializers.ModelSerializer):
     """Full order details"""
-    buyer = serializers.StringRelatedField(read_only=True)
+    buyer = serializers.SerializerMethodField()
     vendor = VendorListSerializer(read_only=True)
     delivery_address = AddressSerializer(read_only=True)
     items = OrderItemSerializer(many=True, read_only=True)
@@ -71,8 +71,18 @@ class OrderDetailSerializer(serializers.ModelSerializer):
             'delivery_address', 'items', 'subtotal', 'vat_amount',
             'delivery_fee', 'total', 'marketplace_fee', 'vendor_payout',
             'status', 'delivery_notes', 'created_at', 'paid_at',
-            'delivered_at', 'group'  # ADDED: group field
+            'delivered_at', 'group'
         ]
+
+    def get_buyer(self, obj):
+        """Return buyer with id for frontend comparison"""
+        return {
+            'id': obj.buyer.id,
+            'email': obj.buyer.email,
+            'username': obj.buyer.username,
+            'first_name': obj.buyer.first_name,
+            'last_name': obj.buyer.last_name,
+        }
 
 
 class OrderCreateSerializer(serializers.ModelSerializer):
@@ -83,7 +93,7 @@ class OrderCreateSerializer(serializers.ModelSerializer):
         model = Order
         fields = [
             'vendor', 'delivery_address', 'items',
-            'delivery_notes', 'group'  # Already present ✓
+            'delivery_notes', 'group'
         ]
 
     def validate_items(self, value):
@@ -183,7 +193,6 @@ class CartItemSerializer(serializers.ModelSerializer):
     subtotal = serializers.DecimalField(
         max_digits=10, decimal_places=2, read_only=True
     )
-    # ✅ GOOD: Using SerializerMethodField for vat_amount
     vat_amount = serializers.SerializerMethodField()
 
     total_with_vat = serializers.DecimalField(
