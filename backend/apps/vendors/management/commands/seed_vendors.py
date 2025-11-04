@@ -161,9 +161,9 @@ class Command(BaseCommand):
                 'fsa_rating_date': None,  # Will auto-populate
                 'fsa_last_checked': None,  # Will auto-populate
                 'fsa_verified': False,  # Will become True after Celery verification
-                # Stripe (incomplete - shows onboarding flow)
+                # Stripe (complete now for testing)
                 'stripe_account_id': 'acct_test_shoreditch_005',
-                'stripe_onboarding_complete': False,
+                'stripe_onboarding_complete': True,
             },
 
             # ==========================================
@@ -193,9 +193,9 @@ class Command(BaseCommand):
                 'fsa_rating_date': None,
                 'fsa_last_checked': None,
                 'fsa_verified': False,
-                # Stripe (incomplete - realistic scenario)
+                # Stripe (complete for testing)
                 'stripe_account_id': 'acct_test_hackney_006',
-                'stripe_onboarding_complete': False,
+                'stripe_onboarding_complete': True,
             },
             {
                 'email': 'greenwich.greens@vendor.test',
@@ -212,17 +212,17 @@ class Command(BaseCommand):
                 'min_order_value': Decimal('40.00'),
                 'vat_number': '',
                 'commission_rate': Decimal('0.15'),
-                'is_approved': False,  # New vendor pending approval
+                # CHANGED: Approved and Stripe complete for checkout testing
+                'is_approved': True,
                 # FSA Pending - New vendor still in onboarding
                 'fsa_establishment_id': None,  # Pending verification
                 'fsa_rating_value': None,
                 'fsa_rating_date': None,
                 'fsa_last_checked': None,
                 'fsa_verified': False,
-                # Stripe (not started - realistic new vendor)
-                # CHANGE: Use None instead of empty string
-                'stripe_account_id': None,
-                'stripe_onboarding_complete': False,
+                # CHANGED: Stripe complete for checkout testing
+                'stripe_account_id': 'acct_test_greenwich_007',
+                'stripe_onboarding_complete': True,
             },
             {
                 'email': 'brixton.butcher@vendor.test',
@@ -239,17 +239,17 @@ class Command(BaseCommand):
                 'min_order_value': Decimal('90.00'),
                 'vat_number': '',
                 'commission_rate': Decimal('0.15'),
-                'is_approved': False,  # New vendor pending approval
+                # CHANGED: Approved and Stripe complete for checkout testing
+                'is_approved': True,
                 # FSA Pending - Vendor is being onboarded
                 'fsa_establishment_id': None,  # Pending verification
                 'fsa_rating_value': None,
                 'fsa_rating_date': None,
                 'fsa_last_checked': None,
                 'fsa_verified': False,
-                # Stripe (not started - realistic new vendor)
-                # CHANGE: Use None instead of empty string
-                'stripe_account_id': None,
-                'stripe_onboarding_complete': False,
+                # CHANGED: Stripe complete for checkout testing
+                'stripe_account_id': 'acct_test_brixton_008',
+                'stripe_onboarding_complete': True,
             },
         ]
 

@@ -475,6 +475,90 @@ export const cartApi = {
   },
 };
 
+// Payments endpoints - FIXED: Added correct /api/v1/ prefix
+export const paymentsApi = {
+  createIntent: async (data: {
+    amount: number;
+    order_id?: number;
+    group_id?: number;
+    metadata?: Record<string, any>;
+  }): Promise<ApiResponse<{
+    client_secret: string;
+    intent_id: string;
+    amount: number;
+    currency: string;
+  }>> => {
+    const { data: response } = await apiClient.post('/payments/create-intent/', data);
+    return { data: response };
+  },
+
+  confirmPayment: async (data: {
+    intent_id: string;
+    payment_method_id: string;
+  }): Promise<ApiResponse<{
+    status: string;
+    message: string;
+    payment_intent: any;
+  }>> => {
+    const { data: response } = await apiClient.post('/payments/confirm-payment/', data);
+    return { data: response };
+  },
+
+  getPaymentStatus: async (intentId: string): Promise<ApiResponse<{
+    status: string;
+    amount: number;
+    currency: string;
+    payment_method?: any;
+    created_at: string;
+  }>> => {
+    const { data } = await apiClient.get(`/payments/payment-status/${intentId}/`);
+    return { data };
+  },
+
+  createSetupIntent: async (data?: {
+    customer_id?: string;
+  }): Promise<ApiResponse<{
+    client_secret: string;
+    setup_intent_id: string;
+  }>> => {
+    const { data: response } = await apiClient.post('/payments/create-setup-intent/', data || {});
+    return { data: response };
+  },
+
+  attachPaymentMethod: async (data: {
+    payment_method_id: string;
+    customer_id: string;
+  }): Promise<ApiResponse<{
+    message: string;
+    payment_method: any;
+  }>> => {
+    const { data: response } = await apiClient.post('/payments/attach-payment-method/', data);
+    return { data: response };
+  },
+
+  listPaymentMethods: async (customerId?: string): Promise<ApiResponse<{
+    payment_methods: any[];
+  }>> => {
+    const { data } = await apiClient.get('/payments/payment-methods/', {
+      params: customerId ? { customer_id: customerId } : undefined,
+    });
+    return { data };
+  },
+
+  createRefund: async (data: {
+    payment_intent_id: string;
+    amount?: number;
+    reason?: string;
+  }): Promise<ApiResponse<{
+    refund_id: string;
+    status: string;
+    amount: number;
+  }>> => {
+    const { data: response } = await apiClient.post('/payments/create-refund/', data);
+    return { data: response };
+  },
+};
+
 // Additional types needed for WebSocket
 export interface BuyingGroupRealtimeStatus {
   id: number;
@@ -498,5 +582,3 @@ export interface GroupUpdate {
   data: any;
   created_at: string;
 }
-
-export { paymentsApi } from './paymentsApi';

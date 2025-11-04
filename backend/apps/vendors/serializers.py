@@ -21,7 +21,8 @@ class VendorListSerializer(serializers.ModelSerializer):
             'id', 'business_name', 'slug', 'description',
             'fsa_rating_value', 'fsa_rating_display',
             'delivery_radius_km', 'min_order_value',
-            'logo_url', 'distance_km'
+            'logo_url', 'distance_km',
+            'postcode'  # Added for Issue #6
         ]
 
     def get_logo_url(self, obj):

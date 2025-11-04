@@ -2,6 +2,7 @@
 ViewSet implementations for order operations.
 Handles order creation, processing, and fulfillment.
 """
+import logging
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -525,10 +526,21 @@ class CartViewSet(viewsets.ViewSet):
             "delivery_notes": "Optional notes"
         }
         """
+        logger = logging.getLogger(__name__)
+
+        logger.error(f"=== CHECKOUT DEBUG START ===")
+        logger.error(f"Request data: {request.data}")
+        logger.error(
+            f"User: {request.user.id if request.user.is_authenticated else 'Anonymous'}")
+
         serializer = CheckoutSerializer(
             data=request.data,
             context={'request': request}
         )
+
+        if not serializer.is_valid():
+            logger.error(f"Validation errors: {serializer.errors}")
+
         serializer.is_valid(raise_exception=True)
 
         delivery_address_id = serializer.validated_data['delivery_address_id']
@@ -536,15 +548,21 @@ class CartViewSet(viewsets.ViewSet):
 
         try:
             cart = Cart.objects.get(user=request.user)
+            logger.error(
+                f"Cart found: ID={cart.id}, Items count={cart.items.count()}")
         except Cart.DoesNotExist:
+            logger.error("Cart not found for user")
             return Response({
                 'error': 'Cart not found'
             }, status=status.HTTP_404_NOT_FOUND)
 
         # Group items by vendor
         items_by_vendor = cart.get_items_by_vendor()
+        logger.error(
+            f"Items grouped by vendor: {len(items_by_vendor)} vendors")
 
         if not items_by_vendor:
+            logger.error("Cart is empty - no items by vendor")
             return Response({
                 'error': 'Cart is empty'
             }, status=status.HTTP_400_BAD_REQUEST)
@@ -557,6 +575,9 @@ class CartViewSet(viewsets.ViewSet):
         failed_vendors = []
 
         for vendor_id, vendor_items in items_by_vendor.items():
+            logger.error(
+                f"Processing vendor {vendor_id}: {len(vendor_items)} items")
+
             # Prepare items for order creation
             order_items_data = [
                 {
@@ -565,6 +586,8 @@ class CartViewSet(viewsets.ViewSet):
                 }
                 for item in vendor_items
             ]
+
+            logger.error(f"Order items data: {order_items_data}")
 
             # Create order
             result = order_service.create_order(
@@ -577,6 +600,7 @@ class CartViewSet(viewsets.ViewSet):
 
             if result.success:
                 order = result.data
+                logger.error(f"Order created successfully: {order.id}")
                 created_orders.append({
                     'order_id': order.id,
                     'reference_number': order.reference_number,
@@ -589,12 +613,18 @@ class CartViewSet(viewsets.ViewSet):
                 for item in vendor_items:
                     item.delete()
             else:
+                logger.error(
+                    f"Order creation failed for vendor {vendor_id}: {result.error} ({result.error_code})")
                 vendor = Vendor.objects.get(id=vendor_id)
                 failed_vendors.append({
                     'vendor_name': vendor.business_name,
                     'error': result.error,
                     'error_code': result.error_code
                 })
+
+        logger.error(f"=== CHECKOUT DEBUG END ===")
+        logger.error(
+            f"Created orders: {len(created_orders)}, Failed: {len(failed_vendors)}")
 
         # Return results
         if created_orders:

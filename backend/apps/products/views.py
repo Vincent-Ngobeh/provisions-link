@@ -85,6 +85,16 @@ class ProductViewSet(viewsets.ModelViewSet):
             )
         )
 
+        # CRITICAL: Only show products from vendors ready to fulfill orders
+        # Staff can see everything for admin purposes
+        if not (self.request.user.is_authenticated and self.request.user.is_staff):
+            queryset = queryset.filter(
+                vendor__is_approved=True,  # Admin approved
+                vendor__stripe_onboarding_complete=True  # Can receive payments
+                # NOTE: We don't filter by FSA rating - any rating is legal
+                # A 3★ vendor can still operate and is shown for transparency
+            )
+
         # For update/delete actions, filter by vendor ownership
         if self.action in ['update', 'partial_update', 'destroy']:
             if self.request.user.is_authenticated:
