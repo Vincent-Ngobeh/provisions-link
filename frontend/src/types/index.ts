@@ -67,6 +67,7 @@ export interface Vendor {
   phone_number?: string; 
   is_approved?: boolean; 
   fsa_verified?: boolean; 
+  stripe_onboarding_complete?: boolean;
   postcode?: string; 
   created_at?: string; 
   fsa_rating_date?: string;

@@ -22,7 +22,9 @@ class VendorListSerializer(serializers.ModelSerializer):
             'fsa_rating_value', 'fsa_rating_display',
             'delivery_radius_km', 'min_order_value',
             'logo_url', 'distance_km',
-            'postcode'  # Added for Issue #6
+            'postcode',
+            'is_approved',
+            'stripe_onboarding_complete',
         ]
 
     def get_logo_url(self, obj):

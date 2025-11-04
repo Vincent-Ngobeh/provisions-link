@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Card, CardContent, CardFooter } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ShoppingCart, Users, ArrowRight, Tag } from 'lucide-react';
+import { ShoppingCart, ArrowRight, Tag, CheckCircle2 } from 'lucide-react';
 import { useCart } from '@/contexts/CartContext';
 import { useAuth } from '@/contexts/AuthContext';
 import type { Product } from '@/types';
@@ -32,8 +32,11 @@ export function ProductCard({ product }: ProductCardProps) {
     }
   };
 
+  // Check if vendor is verified
+  const isVendorVerified = product.vendor.is_approved && product.vendor.stripe_onboarding_complete;
+
   return (
-    <Card className="overflow-hidden hover:shadow-lg transition-shadow">
+    <Card className="overflow-hidden hover:shadow-lg transition-shadow flex flex-col h-full">
       <Link to={`/products/${product.id}`}>
         <div className="aspect-square overflow-hidden bg-gray-100">
           {product.primary_image ? (
@@ -50,16 +53,26 @@ export function ProductCard({ product }: ProductCardProps) {
         </div>
       </Link>
 
-      <CardContent className="pt-4 space-y-2">
+      <CardContent className="pt-4 space-y-2 flex-1 flex flex-col">
         <Link to={`/products/${product.id}`}>
           <h3 className="font-semibold text-lg line-clamp-2 hover:text-primary">
             {product.name}
           </h3>
         </Link>
 
-        <p className="text-sm text-muted-foreground">
-          by {product.vendor.business_name}
-        </p>
+        <div className="flex items-center gap-2">
+          <p className="text-sm text-muted-foreground">
+            by {product.vendor.business_name}
+          </p>
+          {isVendorVerified && (
+            <div className="relative group">
+              <CheckCircle2 className="h-4 w-4 text-green-600" />
+              <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-2 py-1 text-xs text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                Verified Vendor
+              </span>
+            </div>
+          )}
+        </div>
 
         <div className="flex items-center justify-between">
           <div>
@@ -84,7 +97,10 @@ export function ProductCard({ product }: ProductCardProps) {
           <Badge variant="destructive">Out of Stock</Badge>
         )}
 
-        {/* FIXED: Group Buy Teaser with Clear CTA */}
+        {/* Spacer to push group buy section and buttons to bottom */}
+        <div className="flex-1"></div>
+
+        {/* Group Buy Teaser - now at bottom */}
         {product.active_group && (
           <Link to={`/buying-groups/${product.active_group.id}`}>
             <div className="p-3 bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-md hover:shadow-md transition-all cursor-pointer group">
@@ -110,14 +126,16 @@ export function ProductCard({ product }: ProductCardProps) {
         )}
       </CardContent>
 
-      <CardFooter className="pt-0 flex gap-2">
+      <CardFooter className="pt-0 flex gap-2 mt-auto">
         <Button
           className="flex-1"
           variant="outline"
-          disabled={!product.in_stock}
+          disabled={!product.in_stock || !isVendorVerified}
           onClick={handleAddToCart}
         >
-          {product.in_stock ? (
+          {!isVendorVerified ? (
+            'Vendor Not Verified'
+          ) : product.in_stock ? (
             <>
               <ShoppingCart className="mr-2 h-4 w-4" />
               Add to Cart
