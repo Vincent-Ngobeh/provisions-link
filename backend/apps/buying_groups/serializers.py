@@ -60,10 +60,11 @@ class BuyingGroupDetailSerializer(serializers.ModelSerializer):
     discounted_price = serializers.DecimalField(
         max_digits=10, decimal_places=2, read_only=True
     )
-
     # This field is added via .annotate(participants_count=Count(...)) in get_queryset()
     # It only counts pending commitments, not all commitments
     participants_count = serializers.IntegerField(read_only=True)
+    # FIX: Add progress_percent field
+    progress_percent = serializers.FloatField(read_only=True)
 
     class Meta:
         model = BuyingGroup
@@ -71,7 +72,8 @@ class BuyingGroupDetailSerializer(serializers.ModelSerializer):
             'id', 'product', 'center_point', 'radius_km', 'area_name',
             'target_quantity', 'current_quantity', 'min_quantity',
             'discount_percent', 'savings_per_unit', 'discounted_price',
-            'created_at', 'expires_at', 'status', 'participants_count'
+            'created_at', 'expires_at', 'status', 'participants_count',
+            'progress_percent'  # Added to fields list
         ]
 
 

@@ -290,6 +290,194 @@ class GroupBuyingService(BaseService):
                 error_code="SEARCH_FAILED"
             )
 
+    def commit_to_group(
+        self,
+        group_id: int,
+        buyer: User,
+        quantity: int,
+        buyer_postcode: str
+    ) -> ServiceResult:
+        """
+        Wrapper method for committing to a group buying deal.
+        Handles geocoding and delegates to join_group.
+
+        Args:
+            group_id: ID of the group to join
+            buyer: User making the commitment
+            quantity: Quantity they want to buy
+            buyer_postcode: Buyer's postcode (will be geocoded)
+
+        Returns:
+            ServiceResult containing commitment details or error
+        """
+        try:
+            # Geocode the buyer's postcode
+            from apps.integrations.services.geocoding_service import GeocodingService
+            geo_service = GeocodingService()
+            location_result = geo_service.geocode_postcode(buyer_postcode)
+
+            if not location_result.success:
+                return ServiceResult.fail(
+                    f"Could not geocode postcode: {location_result.error}",
+                    error_code="GEOCODING_FAILED"
+                )
+
+            buyer_location = location_result.data['point']
+
+            # Create Stripe payment intent for pre-authorization
+            from apps.integrations.services.stripe_service import StripeConnectService
+            stripe_service = StripeConnectService()
+
+            # Get group to calculate payment amount
+            try:
+                group = BuyingGroup.objects.select_related(
+                    'product').get(id=group_id)
+            except BuyingGroup.DoesNotExist:
+                return ServiceResult.fail(
+                    "Group not found",
+                    error_code="GROUP_NOT_FOUND"
+                )
+
+            # Calculate total amount for payment intent
+            discounted_price = group.product.price * \
+                (1 - group.discount_percent / 100)
+            subtotal = discounted_price * quantity
+            vat_amount = subtotal * Decimal('0.20')  # 20% VAT
+            total = subtotal + vat_amount
+
+            # Create payment intent
+            payment_result = stripe_service.create_payment_intent_for_group(
+                amount=total,
+                group_id=group_id,
+                buyer_id=buyer.id
+            )
+
+            payment_intent_id = None
+            if payment_result.success:
+                payment_intent_id = payment_result.data['intent_id']
+            else:
+                # Log warning but don't fail - payment can be collected later
+                self.log_warning(
+                    f"Failed to create payment intent: {payment_result.error}",
+                    group_id=group_id,
+                    buyer_id=buyer.id
+                )
+
+            # Call join_group with all required parameters
+            result = self.join_group(
+                group_id=group_id,
+                buyer=buyer,
+                quantity=quantity,
+                buyer_location=buyer_location,
+                buyer_postcode=buyer_postcode,
+                payment_intent_id=payment_intent_id
+            )
+
+            if result.success:
+                # Add payment intent to response
+                response_data = result.data.copy()
+                response_data['payment_intent'] = {
+                    'client_secret': payment_result.data.get('client_secret') if payment_result.success else None,
+                    'intent_id': payment_intent_id
+                }
+                response_data['progress_percent'] = response_data['group'].progress_percent
+
+                return ServiceResult.ok(response_data)
+
+            return result
+
+        except Exception as e:
+            self.log_error(
+                f"Error committing to group",
+                exception=e,
+                group_id=group_id,
+                buyer_id=buyer.id
+            )
+            return ServiceResult.fail(
+                "Failed to commit to group",
+                error_code="COMMIT_FAILED"
+            )
+
+    def cancel_commitment(
+        self,
+        commitment_id: int,
+        buyer: User,
+        reason: Optional[str] = None
+    ) -> ServiceResult:
+        """
+        Wrapper method for cancelling a group commitment.
+        Validates ownership and delegates to leave_group.
+
+        Args:
+            commitment_id: ID of the commitment to cancel
+            buyer: User cancelling the commitment
+            reason: Optional reason for cancellation
+
+        Returns:
+            ServiceResult indicating success or failure
+        """
+        try:
+            # Get the commitment
+            try:
+                commitment = GroupCommitment.objects.select_related('group').get(
+                    id=commitment_id
+                )
+            except GroupCommitment.DoesNotExist:
+                return ServiceResult.fail(
+                    "Commitment not found",
+                    error_code="COMMITMENT_NOT_FOUND"
+                )
+
+            # Verify ownership
+            if commitment.buyer != buyer:
+                return ServiceResult.fail(
+                    "You can only cancel your own commitments",
+                    error_code="PERMISSION_DENIED"
+                )
+
+            # Check if already cancelled
+            if commitment.status == 'cancelled':
+                return ServiceResult.fail(
+                    "Commitment is already cancelled",
+                    error_code="ALREADY_CANCELLED"
+                )
+
+            # Check if already confirmed (order created)
+            if commitment.status == 'confirmed':
+                return ServiceResult.fail(
+                    "Cannot cancel confirmed commitment. Contact support.",
+                    error_code="CANNOT_CANCEL_CONFIRMED"
+                )
+
+            # Delegate to leave_group
+            result = self.leave_group(
+                group_id=commitment.group.id,
+                buyer=buyer,
+                reason=reason
+            )
+
+            if result.success:
+                return ServiceResult.ok({
+                    'message': 'Commitment cancelled successfully',
+                    'commitment_id': commitment_id,
+                    'group_id': commitment.group.id,
+                    'quantity_released': commitment.quantity
+                })
+
+            return result
+
+        except Exception as e:
+            self.log_error(
+                f"Error cancelling commitment",
+                exception=e,
+                commitment_id=commitment_id,
+                buyer_id=buyer.id
+            )
+            return ServiceResult.fail(
+                "Failed to cancel commitment",
+                error_code="CANCEL_FAILED"
+            )
+
     def join_group(
         self,
         group_id: int,
@@ -362,26 +550,11 @@ class GroupBuyingService(BaseService):
                         error_code="OUT_OF_RADIUS"
                     )
 
-                # Calculate prices
-                unit_price = group.product.price
-                discounted_price = unit_price * \
-                    (1 - group.discount_percent / 100)
-                subtotal = discounted_price * quantity
-
-                # TODO: Calculate VAT based on product settings
-                vat_amount = subtotal * Decimal('0.20')  # 20% VAT
-                total = subtotal + vat_amount
-
                 # Create commitment
                 commitment = GroupCommitment.objects.create(
                     group=group,
                     buyer=buyer,
                     quantity=quantity,
-                    unit_price=unit_price,
-                    discounted_price=discounted_price,
-                    subtotal=subtotal,
-                    vat_amount=vat_amount,
-                    total=total,
                     buyer_location=buyer_location,
                     buyer_postcode=buyer_postcode,
                     stripe_payment_intent_id=payment_intent_id,
@@ -407,14 +580,31 @@ class GroupBuyingService(BaseService):
                     }
                 )
 
-                # WEBSOCKET: Broadcast the new commitment
+                # Get current participants count
+                participants_count = group.commitments.filter(
+                    status='pending').count()
+
+                # WEBSOCKET: Broadcast new commitment notification
                 broadcaster.broadcast_new_commitment(
                     group_id=group.id,
-                    commitment_id=commitment.id,
                     buyer_name=buyer.get_full_name(),
                     quantity=quantity,
                     new_total=group.current_quantity,
-                    target_quantity=group.target_quantity
+                    participants_count=participants_count
+                )
+
+                # WEBSOCKET: Broadcast progress update with full data
+                time_remaining = group.expires_at - timezone.now()
+                time_remaining_seconds = int(
+                    time_remaining.total_seconds()) if time_remaining.total_seconds() > 0 else 0
+
+                broadcaster.broadcast_progress(
+                    group_id=group.id,
+                    current_quantity=group.current_quantity,
+                    target_quantity=group.target_quantity,
+                    participants_count=participants_count,
+                    progress_percent=group.progress_percent,
+                    time_remaining_seconds=time_remaining_seconds
                 )
 
                 self.log_info(
@@ -426,13 +616,13 @@ class GroupBuyingService(BaseService):
 
                 # Check if target reached
                 if old_quantity < group.target_quantity and group.current_quantity >= group.target_quantity:
-                    # Target reached! Process immediately or wait for expiry
+                    # Target reached! Broadcast threshold event
                     self._handle_target_reached(group)
 
-                    # WEBSOCKET: Broadcast target reached
-                    broadcaster.broadcast_target_reached(
+                    broadcaster.broadcast_threshold_reached(
                         group_id=group.id,
-                        final_quantity=group.current_quantity,
+                        threshold_percent=100,
+                        current_quantity=group.current_quantity,
                         target_quantity=group.target_quantity
                     )
 
@@ -532,14 +722,30 @@ class GroupBuyingService(BaseService):
                     }
                 )
 
-                # WEBSOCKET: Broadcast the cancellation
+                # Get current participants count
+                participants_count = group.commitments.filter(
+                    status='pending').count()
+
+                # WEBSOCKET: Broadcast cancellation notification
                 broadcaster.broadcast_commitment_cancelled(
                     group_id=group.id,
-                    commitment_id=commitment.id,
-                    buyer_name=buyer.get_full_name(),
                     quantity=commitment.quantity,
                     new_total=group.current_quantity,
-                    target_quantity=group.target_quantity
+                    participants_count=participants_count
+                )
+
+                # WEBSOCKET: Broadcast progress update with full data
+                time_remaining = group.expires_at - timezone.now()
+                time_remaining_seconds = int(
+                    time_remaining.total_seconds()) if time_remaining.total_seconds() > 0 else 0
+
+                broadcaster.broadcast_progress(
+                    group_id=group.id,
+                    current_quantity=group.current_quantity,
+                    target_quantity=group.target_quantity,
+                    participants_count=participants_count,
+                    progress_percent=group.progress_percent,
+                    time_remaining_seconds=time_remaining_seconds
                 )
 
                 self.log_info(
