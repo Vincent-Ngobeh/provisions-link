@@ -177,30 +177,36 @@ class ProductViewSet(viewsets.ModelViewSet):
     def search(self, request):
         """
         Advanced product search with filters.
-        POST /api/products/search/
+        POST /api/v1/products/search/
         """
-        serializer = ProductSearchSerializer(data=request.data)
+        # Handle empty request body
+        request_data = request.data if request.data else {}
+
+        serializer = ProductSearchSerializer(data=request_data)
         serializer.is_valid(raise_exception=True)
 
         # Extract search parameters
         params = serializer.validated_data
+
+        # Convert tags list to tag IDs (already integers from serializer)
+        tag_ids = params.get('tags', [])
 
         result = self.service.search_products(
             search_query=params.get('search'),
             category_id=params.get('category').id if params.get(
                 'category') else None,
             vendor_id=params.get('vendor'),
-            tag_ids=[tag.id for tag in params.get('tags', [])],
+            tag_ids=tag_ids,
             min_price=params.get('min_price'),
             max_price=params.get('max_price'),
             in_stock_only=params.get('in_stock_only', False),
-            allergen_free=params.get('allergen_free'),
+            allergen_free=params.get('allergen_free', []),
             min_fsa_rating=params.get('min_fsa_rating'),
             postcode=params.get('postcode'),
             radius_km=params.get('radius_km'),
             ordering=params.get('ordering', '-created_at'),
-            page=request.data.get('page', 1),
-            page_size=request.data.get('page_size', 20)
+            page=request_data.get('page', 1),
+            page_size=request_data.get('page_size', 20)
         )
 
         if result.success:

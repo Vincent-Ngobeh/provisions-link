@@ -74,7 +74,7 @@ export function JoinGroupModal({
     }
 
     if (!postcode.trim()) {
-      setError('Please enter your postcode');
+      setError('Please enter your delivery postcode');
       return;
     }
 
@@ -117,7 +117,7 @@ export function JoinGroupModal({
             
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">Delivery Area</span>
-              <span className="font-medium text-xs">{group.area_name}</span>
+              <span className="font-medium text-xs">{group.area_name} ({group.radius_km}km radius)</span>
             </div>
             
             <div className="flex items-center justify-between">
@@ -159,11 +159,11 @@ export function JoinGroupModal({
             </p>
           </div>
 
-          {/* Postcode Input */}
+          {/* Delivery Postcode */}
           <div className="space-y-2">
             <Label htmlFor="postcode" className="flex items-center gap-2">
               <MapPin className="h-4 w-4" />
-              Your Postcode
+              Delivery Postcode
             </Label>
             <Input
               id="postcode"
@@ -174,7 +174,7 @@ export function JoinGroupModal({
               required
             />
             <p className="text-xs text-muted-foreground">
-              Must be within {group.radius_km}km of vendor area ({group.area_name})
+              Must be within {group.radius_km}km of {group.area_name}
             </p>
           </div>
 

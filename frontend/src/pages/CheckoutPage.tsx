@@ -148,26 +148,37 @@ export default function CheckoutPage() {
                   <p className="text-sm text-muted-foreground">
                     {defaultAddress.city}, {defaultAddress.postcode}
                   </p>
-                  <Button
-                    variant="link"
-                    className="mt-2 px-0"
-                    onClick={() => navigate('/profile')}
-                  >
-                    Change Address
-                  </Button>
+                  <div className="flex gap-2 mt-2">
+                    <Button
+                      variant="link"
+                      className="px-0"
+                      onClick={() => navigate('/profile?tab=addresses')}
+                    >
+                      Change Address
+                    </Button>
+                    <span className="text-muted-foreground">•</span>
+                    <Button
+                      variant="link"
+                      className="px-0"
+                      onClick={() => navigate('/profile?tab=addresses&action=add')}
+                    >
+                      Add New Address
+                    </Button>
+                  </div>
                 </div>
               ) : (
-                <Alert variant="destructive">
+                <Alert>
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>
                     No delivery address found.{' '}
                     <Button
                       variant="link"
-                      className="px-0 h-auto"
-                      onClick={() => navigate('/profile')}
+                      className="px-0 h-auto font-semibold"
+                      onClick={() => navigate('/profile?tab=addresses&action=add')}
                     >
-                      Add one in your profile
+                      Add your first delivery address
                     </Button>
+                    {' '}to continue with checkout.
                   </AlertDescription>
                 </Alert>
               )}

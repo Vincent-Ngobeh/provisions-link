@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useMutation } from '@tanstack/react-query';
-import axios from '@/lib/axios';
+import apiClient from '@/api/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -40,7 +40,7 @@ export default function AddAddressPage() {
 
   const createMutation = useMutation({
     mutationFn: async (data: AddressFormData) => {
-      const response = await axios.post('/api/v1/addresses/', {
+      const response = await apiClient.post('/addresses/', {
         ...data,
         country: 'GB',
       });

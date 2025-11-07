@@ -38,27 +38,38 @@ export function ProductsPage() {
 
     if (searchQuery) params.search = searchQuery;
     
-    // Category - for both GET and POST endpoints
+    // Category - send as 'category' ID for the serializer
     if (filters.categories.length > 0) {
-      params.category = filters.categories[0];  // For GET list
-      params.category_id = filters.categories[0];  // For POST search (backend expects this)
+      params.category = filters.categories[0];
     }
     
-    // Tags - only supported via POST search
-    if (filters.tags.length > 0) params.tags = filters.tags;
+    // Tags - serializer expects array of IDs
+    if (filters.tags.length > 0) {
+      params.tags = filters.tags;
+    }
     
     // Price range
-    if (filters.minPrice > 0) params.min_price = filters.minPrice;
-    if (filters.maxPrice < 50) params.max_price = filters.maxPrice;
+    if (filters.minPrice > 0) {
+      params.min_price = filters.minPrice;
+    }
+    if (filters.maxPrice < 50) {
+      params.max_price = filters.maxPrice;
+    }
     
     // Stock status
-    if (filters.inStockOnly) params.in_stock_only = true;
+    if (filters.inStockOnly) {
+      params.in_stock_only = true;
+    }
     
-    // Allergens - only supported via POST search
-    if (filters.allergenFree.length > 0) params.allergen_free = filters.allergenFree;
+    // Allergens - serializer expects array of allergen field names
+    if (filters.allergenFree.length > 0) {
+      params.allergen_free = filters.allergenFree;
+    }
     
-    // FSA Rating - only supported via POST search
-    if (filters.minFsaRating) params.min_fsa_rating = filters.minFsaRating;
+    // FSA Rating
+    if (filters.minFsaRating) {
+      params.min_fsa_rating = filters.minFsaRating;
+    }
 
     return params;
   }, [page, searchQuery, filters]);

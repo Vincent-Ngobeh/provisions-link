@@ -32,23 +32,33 @@ class ProductListSerializer(serializers.ModelSerializer):
         source='category.name', read_only=True)
     in_stock = serializers.BooleanField(read_only=True)
     active_group = serializers.SerializerMethodField()
+    primary_image = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
         fields = [
             'id', 'name', 'slug', 'vendor', 'category_name',
             'price', 'price_with_vat', 'unit', 'primary_image',
-            'in_stock', 'contains_allergens', 'active_group'
+            'in_stock', 'contains_allergens', 'active_group', 'stock_quantity'
         ]
+
+    def get_primary_image(self, obj):
+        """Safely return primary image URL or None"""
+        if not obj.primary_image:
+            return None
+        try:
+            # Check if field has a file
+            if hasattr(obj.primary_image, 'url'):
+                return obj.primary_image.url
+        except (ValueError, AttributeError):
+            pass
+        return None
 
     def get_active_group(self, obj):
         """Return active buying group if exists"""
-        # FIXED: Only show groups that are:
-        # 1. Status is 'open' (accepting new commitments)
-        # 2. Not expired (expires_at is in the future)
         group = obj.buying_groups.filter(
             status='open',
-            expires_at__gt=timezone.now()  # Only non-expired groups
+            expires_at__gt=timezone.now()
         ).first()
 
         if group:
@@ -67,6 +77,7 @@ class ProductDetailSerializer(serializers.ModelSerializer):
     vendor = VendorListSerializer(read_only=True)
     category = CategorySerializer(read_only=True)
     tags = TagSerializer(many=True, read_only=True)
+    primary_image = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
@@ -79,6 +90,17 @@ class ProductDetailSerializer(serializers.ModelSerializer):
             'additional_images', 'is_active', 'created_at', 'in_stock'
         ]
         read_only_fields = ['slug', 'created_at']
+
+    def get_primary_image(self, obj):
+        """Safely return primary image URL or None"""
+        if not obj.primary_image:
+            return None
+        try:
+            if hasattr(obj.primary_image, 'url'):
+                return obj.primary_image.url
+        except (ValueError, AttributeError):
+            pass
+        return None
 
 
 class ProductCreateUpdateSerializer(serializers.ModelSerializer):
@@ -132,41 +154,63 @@ class ProductCreateUpdateSerializer(serializers.ModelSerializer):
 
 class ProductSearchSerializer(serializers.Serializer):
     """Validate product search parameters"""
-    search = serializers.CharField(required=False, max_length=200)
+    search = serializers.CharField(
+        required=False, allow_blank=True, max_length=200)
     category = serializers.PrimaryKeyRelatedField(
-        queryset=Category.objects.all(), required=False
+        queryset=Category.objects.all(), required=False, allow_null=True
     )
-    tags = serializers.PrimaryKeyRelatedField(
-        queryset=Tag.objects.all(), many=True, required=False
+    vendor = serializers.IntegerField(required=False, allow_null=True)
+    tags = serializers.ListField(
+        child=serializers.IntegerField(), required=False, allow_empty=True
     )
     min_price = serializers.DecimalField(
-        max_digits=10, decimal_places=2, required=False, min_value=0
+        max_digits=10, decimal_places=2, required=False, min_value=0, allow_null=True
     )
     max_price = serializers.DecimalField(
-        max_digits=10, decimal_places=2, required=False, min_value=0
+        max_digits=10, decimal_places=2, required=False, min_value=0, allow_null=True
     )
-    in_stock_only = serializers.BooleanField(default=False)
-    allergen_free = serializers.MultipleChoiceField(
-        choices=Product.ALLERGEN_FIELDS, required=False
+    in_stock_only = serializers.BooleanField(default=False, required=False)
+    allergen_free = serializers.ListField(
+        child=serializers.CharField(), required=False, allow_empty=True
     )
-    dietary = serializers.MultipleChoiceField(
-        choices=['vegan', 'vegetarian', 'halal', 'kosher'],
-        required=False
+    dietary = serializers.ListField(
+        child=serializers.CharField(), required=False, allow_empty=True
     )
     min_fsa_rating = serializers.IntegerField(
-        min_value=1, max_value=5, required=False
+        min_value=1, max_value=5, required=False, allow_null=True
+    )
+    postcode = serializers.CharField(
+        max_length=10, required=False, allow_blank=True)
+    radius_km = serializers.IntegerField(
+        min_value=1, max_value=50, required=False, allow_null=True
     )
     ordering = serializers.ChoiceField(
         choices=['price', '-price', 'created_at', '-created_at', 'distance'],
-        default='-created_at'
+        default='-created_at',
+        required=False
     )
 
     def validate(self, attrs):
-        if attrs.get('min_price') and attrs.get('max_price'):
-            if attrs['min_price'] > attrs['max_price']:
+        """Validate price range"""
+        min_price = attrs.get('min_price')
+        max_price = attrs.get('max_price')
+
+        if min_price is not None and max_price is not None:
+            if min_price > max_price:
                 raise serializers.ValidationError(
                     "Minimum price cannot exceed maximum price"
                 )
+
+        # Validate allergen_free choices if provided
+        allergen_free = attrs.get('allergen_free', [])
+        if allergen_free:
+            valid_allergens = set(Product.ALLERGEN_FIELDS)
+            for allergen in allergen_free:
+                if allergen not in valid_allergens:
+                    raise serializers.ValidationError(
+                        f"Invalid allergen: {allergen}"
+                    )
+
         return attrs
 
 

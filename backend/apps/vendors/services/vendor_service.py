@@ -125,7 +125,6 @@ class VendorService(BaseService):
                 delivery_radius_km=delivery_radius_km,
                 min_order_value=min_order_value,
                 vat_number=vat_number or '',
-                logo_url=logo_url or '',
                 commission_rate=self.DEFAULT_COMMISSION_RATE,
                 is_approved=False,  # Requires admin approval
                 fsa_verified=False,  # Requires FSA check

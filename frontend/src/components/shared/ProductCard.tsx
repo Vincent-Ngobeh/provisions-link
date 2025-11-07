@@ -1,4 +1,4 @@
-// frontend/src/components/products/ProductCard.tsx
+// frontend/src/components/shared/ProductCard.tsx
 import { Link } from 'react-router-dom';
 import { Card, CardContent, CardFooter } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -74,28 +74,33 @@ export function ProductCard({ product }: ProductCardProps) {
           )}
         </div>
 
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-2xl font-bold">£{product.price}</p>
-            <p className="text-xs text-muted-foreground">per {product.unit}</p>
+        {/* Price and Stock Status */}
+        <div className="space-y-1">
+          <div className="flex items-center justify-between">
+            <div className="flex flex-col">
+              <span className="text-2xl font-bold text-primary">
+                £{product.price}
+              </span>
+              <span className="text-xs text-muted-foreground">per {product.unit}</span>
+            </div>
+            {product.stock_quantity === 0 && (
+              <Badge variant="destructive" className="text-xs">
+                Out of Stock
+              </Badge>
+            )}
           </div>
+        </div>
 
+        <div className="flex items-center gap-2 flex-wrap">
           {product.contains_allergens && (
             <Badge variant="outline" className="text-xs">
               Contains Allergens
             </Badge>
           )}
-        </div>
-
-        <div className="pt-1">
           <Badge variant="secondary" className="text-xs">
             Min. order £{product.vendor.min_order_value}
           </Badge>
         </div>
-
-        {!product.in_stock && (
-          <Badge variant="destructive">Out of Stock</Badge>
-        )}
 
         {/* Spacer to push group buy section and buttons to bottom */}
         <div className="flex-1"></div>

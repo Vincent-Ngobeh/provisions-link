@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import axios from '@/lib/axios';
+import apiClient from '@/api/client';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { MapPin, Plus, Home, Building } from 'lucide-react';
@@ -23,7 +23,7 @@ export function AddressList() {
   const { data: addresses, isLoading } = useQuery<Address[]>({
     queryKey: ['addresses'],
     queryFn: async () => {
-      const { data } = await axios.get('/api/v1/addresses/');
+      const { data } = await apiClient.get('/addresses/');
       return data.results || data;
     },
   });

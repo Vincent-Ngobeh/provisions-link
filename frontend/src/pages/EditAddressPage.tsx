@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import axios from '@/lib/axios';
+import apiClient from '@/api/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,7 +38,7 @@ export default function EditAddressPage() {
   const { data: address, isLoading } = useQuery({
     queryKey: ['address', id],
     queryFn: async () => {
-      const { data } = await axios.get(`/api/v1/addresses/${id}/`);
+      const { data } = await apiClient.get(`/addresses/${id}/`);
       return data;
     },
     enabled: !!id,
@@ -61,7 +61,7 @@ export default function EditAddressPage() {
 
   const updateMutation = useMutation({
     mutationFn: async (data: AddressFormData) => {
-      const response = await axios.patch(`/api/v1/addresses/${id}/`, {
+      const response = await apiClient.patch(`/addresses/${id}/`, {
         ...data,
         country: 'GB',
       });
@@ -115,7 +115,6 @@ export default function EditAddressPage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-            {/* Same form fields as AddAddressPage */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="address_name">Address Type</Label>
@@ -146,7 +145,6 @@ export default function EditAddressPage() {
               </div>
             </div>
 
-            {/* Rest of the form fields - same as AddAddressPage */}
             <div className="space-y-2">
               <Label htmlFor="phone_number">Phone Number *</Label>
               <Input
