@@ -188,8 +188,11 @@ class ProductViewSet(viewsets.ModelViewSet):
         # Extract search parameters
         params = serializer.validated_data
 
-        # Convert tags list to tag IDs (already integers from serializer)
+        # Tags are now a list of IDs, not objects
         tag_ids = params.get('tags', [])
+
+        # Allergen_free might be empty list
+        allergen_free = params.get('allergen_free', [])
 
         result = self.service.search_products(
             search_query=params.get('search'),
@@ -200,7 +203,7 @@ class ProductViewSet(viewsets.ModelViewSet):
             min_price=params.get('min_price'),
             max_price=params.get('max_price'),
             in_stock_only=params.get('in_stock_only', False),
-            allergen_free=params.get('allergen_free', []),
+            allergen_free=allergen_free,
             min_fsa_rating=params.get('min_fsa_rating'),
             postcode=params.get('postcode'),
             radius_km=params.get('radius_km'),

@@ -18,7 +18,6 @@ export function ProductsPage() {
   const [page, setPage] = useState(1);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
-  
   const [filters, setFilters] = useState<ProductFiltersState>({
     categories: searchParams.get('categories')?.split(',').map(Number).filter(Boolean) || [],
     tags: searchParams.get('tags')?.split(',').map(Number).filter(Boolean) || [],
@@ -37,17 +36,17 @@ export function ProductsPage() {
     };
 
     if (searchQuery) params.search = searchQuery;
-    
-    // Category - send as 'category' ID for the serializer
+
+    // Category - use 'category' for both GET and POST
     if (filters.categories.length > 0) {
       params.category = filters.categories[0];
     }
-    
-    // Tags - serializer expects array of IDs
+
+    // Tags - array of IDs
     if (filters.tags.length > 0) {
       params.tags = filters.tags;
     }
-    
+
     // Price range
     if (filters.minPrice > 0) {
       params.min_price = filters.minPrice;
@@ -55,17 +54,17 @@ export function ProductsPage() {
     if (filters.maxPrice < 50) {
       params.max_price = filters.maxPrice;
     }
-    
+
     // Stock status
     if (filters.inStockOnly) {
       params.in_stock_only = true;
     }
-    
-    // Allergens - serializer expects array of allergen field names
+
+    // Allergens - array of allergen field names
     if (filters.allergenFree.length > 0) {
       params.allergen_free = filters.allergenFree;
     }
-    
+
     // FSA Rating
     if (filters.minFsaRating) {
       params.min_fsa_rating = filters.minFsaRating;
@@ -75,9 +74,9 @@ export function ProductsPage() {
   }, [page, searchQuery, filters]);
 
   // Check if we need advanced search endpoint
-  const needsSearchEndpoint = 
-    filters.tags.length > 0 || 
-    filters.allergenFree.length > 0 || 
+  const needsSearchEndpoint =
+    filters.tags.length > 0 ||
+    filters.allergenFree.length > 0 ||
     filters.minFsaRating !== undefined;
 
   // Use appropriate endpoint based on filters
@@ -110,7 +109,7 @@ export function ProductsPage() {
 
   const updateUrlParams = (filtersToUse = filters) => {
     const params = new URLSearchParams();
-    
+
     if (searchQuery) params.set('search', searchQuery);
     if (filtersToUse.categories.length > 0) params.set('categories', filtersToUse.categories.join(','));
     if (filtersToUse.tags.length > 0) params.set('tags', filtersToUse.tags.join(','));
@@ -123,7 +122,7 @@ export function ProductsPage() {
     setSearchParams(params);
   };
 
-  const activeFiltersCount = 
+  const activeFiltersCount =
     filters.categories.length +
     filters.tags.length +
     filters.allergenFree.length +
@@ -168,7 +167,7 @@ export function ProductsPage() {
           )}
         </div>
         <Button type="submit">Search</Button>
-        
+
         {/* Mobile Filters Button */}
         <Sheet open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
           <SheetTrigger asChild>
@@ -183,8 +182,8 @@ export function ProductsPage() {
             </Button>
           </SheetTrigger>
           <SheetContent side="left" className="w-80 overflow-y-auto">
-            <ProductFilters 
-              filters={filters} 
+            <ProductFilters
+              filters={filters}
               onChange={handleFiltersChange}
               onClose={() => setMobileFiltersOpen(false)}
             />

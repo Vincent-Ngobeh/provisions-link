@@ -47,7 +47,6 @@ class ProductListSerializer(serializers.ModelSerializer):
         if not obj.primary_image:
             return None
         try:
-            # Check if field has a file
             if hasattr(obj.primary_image, 'url'):
                 return obj.primary_image.url
         except (ValueError, AttributeError):
@@ -56,9 +55,12 @@ class ProductListSerializer(serializers.ModelSerializer):
 
     def get_active_group(self, obj):
         """Return active buying group if exists"""
+        # FIXED: Only show groups that are:
+        # 1. Status is 'open' (accepting new commitments)
+        # 2. Not expired (expires_at is in the future)
         group = obj.buying_groups.filter(
             status='open',
-            expires_at__gt=timezone.now()
+            expires_at__gt=timezone.now()  # Only non-expired groups
         ).first()
 
         if group:
@@ -191,7 +193,7 @@ class ProductSearchSerializer(serializers.Serializer):
     )
 
     def validate(self, attrs):
-        """Validate price range"""
+        """Validate price range and allergens"""
         min_price = attrs.get('min_price')
         max_price = attrs.get('max_price')
 
