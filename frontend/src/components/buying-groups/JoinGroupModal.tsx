@@ -525,12 +525,14 @@ function InlineAddressForm({
   onCancel: () => void;
 }) {
   const [formData, setFormData] = useState({
+    address_name: 'Home',
     recipient_name: '',
     line1: '',
     line2: '',
     city: '',
     postcode: '',
-    phone: '',
+    phone_number: '',
+    country: 'GB',
     is_default: false,
   });
   const [error, setError] = useState<string>('');
@@ -597,6 +599,17 @@ function InlineAddressForm({
 
       <div className="grid grid-cols-2 gap-4">
         <div className="col-span-2">
+          <Label htmlFor="address_name">Address Name *</Label>
+          <Input
+            id="address_name"
+            value={formData.address_name}
+            onChange={(e) => setFormData({ ...formData, address_name: e.target.value })}
+            placeholder="e.g., Home, Work, etc."
+            required
+          />
+        </div>
+
+        <div className="col-span-2">
           <Label htmlFor="recipient_name">Recipient Name *</Label>
           <Input
             id="recipient_name"
@@ -649,12 +662,12 @@ function InlineAddressForm({
         </div>
 
         <div className="col-span-2">
-          <Label htmlFor="phone">Phone Number</Label>
+          <Label htmlFor="phone_number">Phone Number</Label>
           <Input
-            id="phone"
+            id="phone_number"
             type="tel"
-            value={formData.phone}
-            onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+            value={formData.phone_number}
+            onChange={(e) => setFormData({ ...formData, phone_number: e.target.value })}
             placeholder="+44 7700 900000"
           />
         </div>
