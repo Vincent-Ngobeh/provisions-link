@@ -19,6 +19,7 @@ from .serializers import (
     BuyingGroupRealtimeSerializer
 )
 from .services.group_buying_service import GroupBuyingService
+from apps.core.models import Address
 
 
 class BuyingGroupViewSet(viewsets.ModelViewSet):
@@ -203,6 +204,8 @@ class BuyingGroupViewSet(viewsets.ModelViewSet):
             return Response({
                 'error': 'address_id is required'
             }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Get the address
         try:
             address = Address.objects.get(id=address_id, user=request.user)
         except Address.DoesNotExist:

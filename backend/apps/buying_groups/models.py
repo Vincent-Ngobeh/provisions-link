@@ -191,13 +191,14 @@ class GroupCommitment(models.Model):
         help_text="Buyer's postcode"
     )
 
-    # Delivery address for order creation (REQUIRED after migration)
+    # Delivery address for order creation (supports legacy commitments)
     delivery_address = models.ForeignKey(
-        'addresses.Address',
+        'core.Address',  # Fixed: Address is in core app, not addresses
         on_delete=models.PROTECT,
         related_name='group_commitments',
+        null=True,  # Allow null for legacy commitments
+        blank=True,
         help_text="Delivery address for this commitment"
-        # No null=True - REQUIRED for new commitments after migration
     )
     delivery_notes = models.TextField(
         blank=True,
