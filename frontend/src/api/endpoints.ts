@@ -188,15 +188,35 @@ export const buyingGroupsApi = {
     id: number, 
     commitmentData: { 
       quantity: number; 
-      postcode: string; 
+      postcode: string;
+      delivery_address_id: number;
+      delivery_notes?: string;
     }
   ): Promise<ApiResponse<{
     message: string;
     commitment: GroupCommitment;
-    payment_intent?: string;
+    payment_intent?: {
+      client_secret: string | null;
+      intent_id: string | null;
+    };
     group_progress: number;
   }>> => {
     const { data } = await apiClient.post(`/buying-groups/${id}/commit/`, commitmentData);
+    return { data };
+  },
+
+  validateAddress: async (
+    groupId: number, 
+    addressId: number
+  ): Promise<ApiResponse<{
+    valid: boolean;
+    distance_km: number;
+    max_distance_km: number;
+    message: string;
+  }>> => {
+    const { data } = await apiClient.post(`/buying-groups/${groupId}/validate_address/`, {
+      address_id: addressId,
+    });
     return { data };
   },
 

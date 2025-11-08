@@ -21,6 +21,7 @@ from apps.buying_groups.models import BuyingGroup, GroupCommitment, GroupUpdate
 from apps.products.models import Product
 from apps.core.models import User
 from apps.core.utils.websocket_utils import broadcaster
+from apps.core.models import Address
 
 
 class GroupBuyingService(BaseService):
@@ -295,7 +296,9 @@ class GroupBuyingService(BaseService):
         group_id: int,
         buyer: User,
         quantity: int,
-        buyer_postcode: str
+        buyer_postcode: str,
+        delivery_address_id: int,
+        delivery_notes: Optional[str] = None
     ) -> ServiceResult:
         """
         Wrapper method for committing to a group buying deal.
@@ -306,11 +309,22 @@ class GroupBuyingService(BaseService):
             buyer: User making the commitment
             quantity: Quantity they want to buy
             buyer_postcode: Buyer's postcode (will be geocoded)
+            delivery_address_id: ID of delivery address
+            delivery_notes: Optional delivery notes
 
         Returns:
             ServiceResult containing commitment details or error
         """
         try:
+            try:
+                delivery_address = Address.objects.get(
+                    id=delivery_address_id, user=buyer)
+            except Address.DoesNotExist:
+                return ServiceResult.fail(
+                    "Invalid delivery address",
+                    error_code="INVALID_ADDRESS"
+                )
+
             # Geocode the buyer's postcode
             from apps.integrations.services.geocoding_service import GeocodingService
             geo_service = GeocodingService()
@@ -324,28 +338,43 @@ class GroupBuyingService(BaseService):
 
             buyer_location = location_result.data['point']
 
-            # Create Stripe payment intent for pre-authorization
-            from apps.integrations.services.stripe_service import StripeConnectService
-            stripe_service = StripeConnectService()
-
             # Get group to calculate payment amount
             try:
                 group = BuyingGroup.objects.select_related(
-                    'product').get(id=group_id)
+                    'product__vendor').get(id=group_id)
             except BuyingGroup.DoesNotExist:
                 return ServiceResult.fail(
                     "Group not found",
                     error_code="GROUP_NOT_FOUND"
                 )
 
-            # Calculate total amount for payment intent
-            discounted_price = group.product.price * \
-                (1 - group.discount_percent / 100)
-            subtotal = discounted_price * quantity
-            vat_amount = subtotal * Decimal('0.20')  # 20% VAT
-            total = subtotal + vat_amount
+            # Calculate prices with group discount
+            product = group.product
+            vendor = product.vendor
 
-            # Create payment intent
+            unit_price = product.price
+            discount_multiplier = 1 - (group.discount_percent / 100)
+            discounted_price = unit_price * discount_multiplier
+            subtotal = discounted_price * quantity
+            vat_amount = subtotal * product.vat_rate
+
+            # IMPORTANT: Calculate delivery fee DURING join using selected address
+            from apps.orders.services.order_service import OrderService
+            order_service = OrderService()
+            delivery_fee = order_service._calculate_delivery_fee(
+                subtotal,
+                vendor,
+                delivery_address
+            )
+
+            # Calculate total including delivery fee
+            total = subtotal + vat_amount + delivery_fee
+
+            # Create Stripe payment intent for pre-authorization
+            from apps.integrations.services.stripe_service import StripeConnectService
+            stripe_service = StripeConnectService()
+
+            # Create payment intent with complete total
             payment_result = stripe_service.create_payment_intent_for_group(
                 amount=total,
                 group_id=group_id,
@@ -370,7 +399,9 @@ class GroupBuyingService(BaseService):
                 quantity=quantity,
                 buyer_location=buyer_location,
                 buyer_postcode=buyer_postcode,
-                payment_intent_id=payment_intent_id
+                payment_intent_id=payment_intent_id,
+                delivery_address=delivery_address,
+                delivery_notes=delivery_notes
             )
 
             if result.success:
@@ -485,7 +516,9 @@ class GroupBuyingService(BaseService):
         quantity: int,
         buyer_location: Point,
         buyer_postcode: str,
-        payment_intent_id: Optional[str] = None
+        payment_intent_id: Optional[str] = None,
+        delivery_address: Optional['Address'] = None,
+        delivery_notes: Optional[str] = None
     ) -> ServiceResult:
         """
         Allow a buyer to join/commit to a buying group with WebSocket notification.
@@ -497,6 +530,8 @@ class GroupBuyingService(BaseService):
             buyer_location: Geocoded location of the buyer
             buyer_postcode: Buyer's postcode
             payment_intent_id: Stripe payment intent ID for pre-authorization
+            delivery_address: Delivery address for the order
+            delivery_notes: Optional delivery notes
 
         Returns:
             ServiceResult containing the created GroupCommitment or error
@@ -558,6 +593,8 @@ class GroupBuyingService(BaseService):
                     buyer_location=buyer_location,
                     buyer_postcode=buyer_postcode,
                     stripe_payment_intent_id=payment_intent_id,
+                    delivery_address=delivery_address,
+                    delivery_notes=delivery_notes or '',
                     status='pending'
                 )
 
@@ -616,7 +653,7 @@ class GroupBuyingService(BaseService):
 
                 # Check if target reached
                 if old_quantity < group.target_quantity and group.current_quantity >= group.target_quantity:
-                    # Target reached! Broadcast threshold event
+                    # Target reached! Process immediately
                     self._handle_target_reached(group)
 
                     broadcaster.broadcast_threshold_reached(
@@ -812,7 +849,7 @@ class GroupBuyingService(BaseService):
                 'group': group,
                 'progress_percent': progress_percent,
                 'hours_remaining': hours_remaining,
-                'is_active': group.status == 'open' and not group.has_expired(),
+                'is_active': group.status == 'open' and not group.is_expired,
                 'recent_updates': recent_updates,
                 'commitment_count': group.commitments.filter(status='pending').count()
             })
@@ -826,7 +863,7 @@ class GroupBuyingService(BaseService):
     def _handle_target_reached(self, group: BuyingGroup) -> None:
         """
         Handle when a group reaches its target quantity.
-        Can either process immediately or wait for expiry.
+        Processes immediately when target is reached.
 
         Args:
             group: The buying group that reached target
@@ -834,28 +871,35 @@ class GroupBuyingService(BaseService):
         # Create update event
         GroupUpdate.objects.create(
             group=group,
-            event_type='target_reached',
+            event_type='threshold',
             event_data={
                 'current_quantity': group.current_quantity,
                 'target_quantity': group.target_quantity,
-                'message': 'Target quantity reached! Group will proceed.'
+                'message': 'Target quantity reached! Processing orders now.'
             }
         )
 
         self.log_info(
-            f"Group {group.id} reached target quantity",
+            f"Group {group.id} reached target quantity - processing immediately",
             group_id=group.id,
             quantity=group.current_quantity
         )
 
-        # OPTION 1: Process immediately when target reached
-        # group.status = 'active'
-        # group.save(update_fields=['status'])
-        # self._process_successful_group(group)
+        # IMMEDIATELY process when target reached
+        group.status = 'active'
+        group.save(update_fields=['status'])
 
-        # OPTION 2: Wait until expiry (current behavior)
-        # Let the group continue accepting commitments until expiry
-        pass
+        # Create orders immediately
+        self._process_successful_group(group)
+
+        # Mark group as completed
+        group.status = 'completed'
+        group.save(update_fields=['status'])
+
+        self.log_info(
+            f"Group {group.id} processed immediately after reaching target",
+            group_id=group.id
+        )
 
     def update_group_status(
         self,

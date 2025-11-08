@@ -146,17 +146,21 @@ class BuyingGroupViewSet(viewsets.ModelViewSet):
 
         quantity = request.data.get('quantity')
         buyer_postcode = request.data.get('postcode')
+        delivery_address_id = request.data.get('delivery_address_id')
+        delivery_notes = request.data.get('delivery_notes')
 
-        if not all([quantity, buyer_postcode]):
+        if not all([quantity, buyer_postcode, delivery_address_id]):
             return Response({
-                'error': 'quantity and postcode are required'
+                'error': 'quantity, postcode, and delivery_address_id are required'
             }, status=status.HTTP_400_BAD_REQUEST)
 
         result = self.service.commit_to_group(
             group_id=group.id,
             buyer=request.user,
             quantity=int(quantity),
-            buyer_postcode=buyer_postcode
+            buyer_postcode=buyer_postcode,
+            delivery_address_id=int(delivery_address_id),
+            delivery_notes=delivery_notes
         )
 
         if result.success:
@@ -184,6 +188,51 @@ class BuyingGroupViewSet(viewsets.ModelViewSet):
             'error': result.error,
             'error_code': result.error_code
         }, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
+    def validate_address(self, request, pk=None):
+        """
+        Validate if an address is within the group's radius.
+        POST /api/buying-groups/{id}/validate_address/
+        Body: { "address_id": 123 }
+        """
+        group = self.get_object()
+        address_id = request.data.get('address_id')
+
+        if not address_id:
+            return Response({
+                'error': 'address_id is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            address = Address.objects.get(id=address_id, user=request.user)
+        except Address.DoesNotExist:
+            return Response({
+                'error': 'Address not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        # Geocode the address postcode
+        from apps.integrations.services.geocoding_service import GeocodingService
+        geo_service = GeocodingService()
+        location_result = geo_service.geocode_postcode(address.postcode)
+
+        if not location_result.success:
+            return Response({
+                'error': 'Could not validate address location',
+                'valid': False
+            }, status=status.HTTP_200_OK)
+
+        # Check distance
+        address_location = location_result.data['point']
+        distance_km = group.center_point.distance(address_location) / 1000
+
+        is_valid = distance_km <= group.radius_km
+
+        return Response({
+            'valid': is_valid,
+            'distance_km': round(distance_km, 2),
+            'max_distance_km': group.radius_km,
+            'message': f'Address is {distance_km:.1f}km from group center' if not is_valid else 'Address is valid'
+        })
 
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
     def cancel_commitment(self, request, pk=None):

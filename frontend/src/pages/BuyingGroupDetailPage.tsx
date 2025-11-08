@@ -288,6 +288,17 @@ export default function BuyingGroupDetailPage() {
                 />
               </div>
 
+              {/* Target Reached Alert */}
+              {currentQuantity >= targetQuantity && group.status === 'open' && (
+                <Alert className="bg-green-50 border-green-200">
+                  <CheckCircle className="h-4 w-4 text-green-600" />
+                  <AlertDescription className="text-sm text-green-700 font-medium">
+                    🎉 Target reached! The discount is now unlocked for all participants. 
+                    The group will finalize when the timer expires.
+                  </AlertDescription>
+                </Alert>
+              )}
+
               {/* Countdown and Participants */}
               <div className="grid grid-cols-2 gap-4">
                 <Card>

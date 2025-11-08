@@ -3,7 +3,7 @@
 
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { vendorsApi, productsApi } from '@/api/endpoints';
+import { vendorsApi, productsApi, buyingGroupsApi } from '@/api/endpoints';
 import { FSARatingBadge } from '@/components/vendors/FSARatingBadge';
 import { ProductCard } from '@/components/shared/ProductCard';
 import { Button } from '@/components/ui/button';
@@ -38,6 +38,20 @@ export default function VendorDetailPage() {
     queryKey: ['vendor-products', id],
     queryFn: () => productsApi.list({ vendor: parseInt(id!) }),
     enabled: !!id,
+  });
+
+  // Fetch vendor's active buying groups
+  const { data: buyingGroupsData } = useQuery({
+    queryKey: ['vendor-buying-groups', id],
+    queryFn: async () => {
+      const response = await buyingGroupsApi.list({ status: 'open' });
+      // Filter groups for this vendor's products
+      const allGroups = response.data?.results || [];
+      return allGroups.filter((group: any) => 
+        group.vendor_name === vendorData?.data?.business_name
+      );
+    },
+    enabled: !!id && !!vendorData?.data,
   });
 
   const vendor = vendorData?.data;
@@ -242,10 +256,22 @@ export default function VendorDetailPage() {
                   </div>
                 )}
 
-                {vendor.active_groups_count !== undefined && (
-                  <div className="flex justify-between items-center">
+                {vendor.active_groups_count !== undefined && vendor.active_groups_count > 0 && (
+                  <div 
+                    className="flex justify-between items-center cursor-pointer hover:bg-accent rounded p-2 -m-2 transition-colors"
+                    onClick={() => {
+                      const groups = buyingGroupsData || [];
+                      if (groups.length > 0) {
+                        navigate(`/buying-groups/${groups[0].id}`);
+                      } else {
+                        navigate('/buying-groups');
+                      }
+                    }}
+                  >
                     <span className="text-sm text-muted-foreground">Active Group Buys</span>
-                    <Badge variant="secondary">{vendor.active_groups_count}</Badge>
+                    <Badge variant="secondary" className="cursor-pointer">
+                      {vendor.active_groups_count}
+                    </Badge>
                   </div>
                 )}
               </CardContent>

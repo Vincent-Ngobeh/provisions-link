@@ -1,5 +1,6 @@
 # apps/buying_groups/models.py
 
+import uuid
 from decimal import Decimal
 from django.contrib.gis.db import models
 from django.contrib.gis.measure import D
@@ -190,7 +191,21 @@ class GroupCommitment(models.Model):
         help_text="Buyer's postcode"
     )
 
-    # Payment
+    # Delivery address for order creation (REQUIRED after migration)
+    delivery_address = models.ForeignKey(
+        'addresses.Address',
+        on_delete=models.PROTECT,
+        related_name='group_commitments',
+        help_text="Delivery address for this commitment"
+        # No null=True - REQUIRED for new commitments after migration
+    )
+    delivery_notes = models.TextField(
+        blank=True,
+        default='',
+        help_text="Optional delivery notes"
+    )
+
+    # Payment (nullable because Stripe might fail temporarily)
     stripe_payment_intent_id = models.CharField(
         max_length=200,
         blank=True,

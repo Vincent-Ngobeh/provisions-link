@@ -23,14 +23,30 @@ export function GroupCard({
 }: GroupCardProps) {
   const navigate = useNavigate();
 
-  const statusConfig = {
-    open: { label: 'Active', className: 'bg-green-100 text-green-800' },
-    active: { label: 'Target Reached', className: 'bg-blue-100 text-blue-800' },
-    failed: { label: 'Failed', className: 'bg-red-100 text-red-800' },
-    completed: { label: 'Completed', className: 'bg-gray-100 text-gray-800' },
+  const getStatusConfig = () => {
+    const isTargetReached = group.current_quantity >= group.target_quantity;
+    const isMinReached = group.current_quantity >= group.min_quantity;
+    
+    if (group.status === 'open') {
+      if (isTargetReached) {
+        return { label: 'Target Reached ✓', className: 'bg-green-100 text-green-800' };
+      } else if (isMinReached) {
+        return { label: 'Active - Min Reached', className: 'bg-blue-100 text-blue-800' };
+      } else {
+        return { label: 'Active', className: 'bg-green-100 text-green-800' };
+      }
+    }
+    
+    const statusConfig = {
+      active: { label: 'Finalizing', className: 'bg-purple-100 text-purple-800' },
+      failed: { label: 'Failed', className: 'bg-red-100 text-red-800' },
+      completed: { label: 'Completed', className: 'bg-gray-100 text-gray-800' },
+    };
+    
+    return statusConfig[group.status as keyof typeof statusConfig] || { label: 'Active', className: 'bg-green-100 text-green-800' };
   };
 
-  const status = statusConfig[group.status] || statusConfig.open;
+  const status = getStatusConfig();
   const discountValue = parseFloat(group.discount_percent);
 
   return (
