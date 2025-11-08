@@ -162,6 +162,7 @@ export interface BuyingGroupDetail extends BuyingGroup {
     type: string;
     coordinates: [number, number];
   };
+  center_postcode?: string;
   radius_km: number;
   min_quantity: number;
   savings_per_unit: string;

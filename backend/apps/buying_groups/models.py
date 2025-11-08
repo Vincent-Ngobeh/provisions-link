@@ -196,8 +196,6 @@ class GroupCommitment(models.Model):
         'core.Address',  # Fixed: Address is in core app, not addresses
         on_delete=models.PROTECT,
         related_name='group_commitments',
-        null=True,  # Allow null for legacy commitments
-        blank=True,
         help_text="Delivery address for this commitment"
     )
     delivery_notes = models.TextField(

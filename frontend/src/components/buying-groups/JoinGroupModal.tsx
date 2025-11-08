@@ -25,7 +25,20 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Loader2, MapPin, Package, Tag, Info, AlertCircle, Plus } from 'lucide-react';
+import { Separator } from '@/components/ui/separator';
+import { 
+  Loader2, 
+  MapPin, 
+  Package, 
+  Tag, 
+  Info, 
+  AlertCircle, 
+  Plus,
+  Users,
+  Clock,
+  Navigation,
+  TrendingUp
+} from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import type { BuyingGroupDetail, GroupCommitment } from '@/types';
 
@@ -94,7 +107,7 @@ function JoinGroupForm({
     queryFn: () => addressesApi.list(),
   });
 
-  const addresses = addressesData?.data || [];
+  const addresses = addressesData?.data?.results || [];
   const defaultAddress = addresses.find((a: any) => a.is_default);
 
   // Auto-select default address and validate it
@@ -204,6 +217,23 @@ function JoinGroupForm({
   const totalPrice = discountedPrice * quantity;
   const savings = parseFloat(group.savings_per_unit) * quantity;
 
+  // Calculate time remaining
+  const getTimeRemaining = () => {
+    const now = new Date();
+    const expiresAt = new Date(group.expires_at);
+    const diffMs = expiresAt.getTime() - now.getTime();
+    
+    if (diffMs <= 0) return 'Expired';
+    
+    const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    
+    if (days > 0) {
+      return `${days} day${days !== 1 ? 's' : ''} ${hours}h remaining`;
+    }
+    return `${hours} hour${hours !== 1 ? 's' : ''} remaining`;
+  };
+
   if (isLoadingAddresses) {
     return <Skeleton className="h-96" />;
   }
@@ -213,6 +243,9 @@ function JoinGroupForm({
     return (
       <Elements stripe={stripePromise} options={{ clientSecret }}>
         <PaymentForm
+          group={group}
+          quantity={quantity}
+          totalPrice={totalPrice}
           clientSecret={clientSecret}
           onSuccess={() => {
             queryClient.invalidateQueries({ queryKey: ['buying-group', group.id] });
@@ -243,6 +276,53 @@ function JoinGroupForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {/* Group Context Info - MODIFIED */}
+      <div className="rounded-lg border bg-muted/30 p-4">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="flex items-start gap-2">
+            <MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />
+            <div>
+              <p className="text-xs text-muted-foreground">Location</p>
+              <p className="text-sm font-medium">{group.area_name}</p>
+              <p className="text-xs text-muted-foreground">
+                {group.product.vendor.postcode || 'Postcode N/A'} • Within {group.radius_km}km
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-2">
+            <Clock className="h-4 w-4 text-muted-foreground mt-0.5" />
+            <div>
+              <p className="text-xs text-muted-foreground">Time Left</p>
+              <p className="text-sm font-medium">{getTimeRemaining()}</p>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-2">
+            <TrendingUp className="h-4 w-4 text-muted-foreground mt-0.5" />
+            <div>
+              <p className="text-xs text-muted-foreground">Progress</p>
+              <p className="text-sm font-medium">
+                {group.current_quantity}/{group.target_quantity} units
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {group.progress_percent.toFixed(0)}% complete
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-2">
+            <Users className="h-4 w-4 text-muted-foreground mt-0.5" />
+            <div>
+              <p className="text-xs text-muted-foreground">Participants</p>
+              <p className="text-sm font-medium">{group.participants_count} buyers</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <Separator />
+
       {/* Product Info */}
       <div className="rounded-lg bg-muted p-4 space-y-2">
         <div className="flex items-center justify-between">
@@ -628,10 +708,16 @@ function InlineAddressForm({
 }
 
 function PaymentForm({
+  group,
+  quantity,
+  totalPrice,
   clientSecret,
   onSuccess,
   onCancel,
 }: {
+  group: BuyingGroupDetail;
+  quantity: number;
+  totalPrice: number;
   clientSecret: string;
   onSuccess: () => void;
   onCancel: () => void;
@@ -669,6 +755,35 @@ function PaymentForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {/* Order Summary */}
+      <div className="rounded-lg border p-4 space-y-3">
+        <h3 className="font-semibold">Order Summary</h3>
+        
+        <div className="space-y-2 text-sm">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Product</span>
+            <span className="font-medium">{group.product.name}</span>
+          </div>
+          
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Quantity</span>
+            <span className="font-medium">{quantity} units</span>
+          </div>
+          
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Price per unit</span>
+            <span className="font-medium">£{parseFloat(group.discounted_price).toFixed(2)}</span>
+          </div>
+
+          <Separator />
+
+          <div className="flex justify-between font-bold text-lg pt-1">
+            <span>Total</span>
+            <span className="text-primary">£{totalPrice.toFixed(2)}</span>
+          </div>
+        </div>
+      </div>
+
       <Alert>
         <Info className="h-4 w-4" />
         <AlertDescription className="text-xs">
@@ -677,6 +792,19 @@ function PaymentForm({
       </Alert>
 
       <PaymentElement />
+
+      {/* Test Card Info */}
+      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+        <p className="text-xs text-yellow-800 font-medium mb-1">
+          🧪 Test Mode
+        </p>
+        <p className="text-xs text-yellow-700">
+          Use test card: <code className="font-mono bg-yellow-100 px-1 rounded">4242 4242 4242 4242</code>
+        </p>
+        <p className="text-xs text-yellow-700 mt-1">
+          Any CVC, future expiry date
+        </p>
+      </div>
 
       {error && (
         <Alert variant="destructive">

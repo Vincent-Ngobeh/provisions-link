@@ -377,10 +377,10 @@ export const ordersApi = {
   },
 };
 
-// Addresses endpoints
+// Addresses endpoints - FIXED: Changed to PaginatedResponse
 export const addressesApi = {
-  list: async (): Promise<ApiResponse<Address[]>> => {
-    const { data } = await apiClient.get<Address[]>('/addresses/');
+  list: async (): Promise<ApiResponse<PaginatedResponse<Address>>> => {
+    const { data } = await apiClient.get<PaginatedResponse<Address>>('/addresses/');
     return { data };
   },
 
