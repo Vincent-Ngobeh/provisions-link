@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { productsApi } from '@/api/endpoints';
@@ -27,6 +27,11 @@ export function ProductsPage() {
     allergenFree: searchParams.get('allergenFree')?.split(',').filter(Boolean) || [],
     minFsaRating: searchParams.get('minFsa') ? Number(searchParams.get('minFsa')) : undefined,
   });
+
+  // Scroll to top when page changes
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [page]);
 
   // Build API params from filters - include ALL filters
   const apiParams = useMemo(() => {
@@ -257,24 +262,102 @@ export function ProductsPage() {
 
               {/* Pagination */}
               {data.data.count > 12 && (
-                <div className="flex justify-center gap-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => setPage(p => Math.max(1, p - 1))}
-                    disabled={!data.data.previous || isLoading}
-                  >
-                    Previous
-                  </Button>
-                  <div className="flex items-center px-4">
-                    Page {page}
+                <div className="mt-8 mb-4">
+                  <div className="flex justify-center">
+                    <div className="flex items-center gap-1 bg-card border rounded-lg p-2 shadow-md">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPage(p => Math.max(1, p - 1))}
+                        disabled={!data.data.previous || isLoading}
+                        className="h-8"
+                      >
+                        Previous
+                      </Button>
+
+                      {/* Generate page numbers */}
+                      {(() => {
+                        const totalPages = data.data.pagination?.total_pages || Math.ceil(data.data.count / 12);
+                        const pages = [];
+
+                        // Always show first page
+                        pages.push(
+                          <Button
+                            key={1}
+                            variant={page === 1 ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setPage(1)}
+                            disabled={isLoading}
+                            className="h-8 w-8 p-0"
+                          >
+                            1
+                          </Button>
+                        );
+
+                        // Show ellipsis if needed
+                        if (page > 3) {
+                          pages.push(
+                            <div key="ellipsis-start" className="flex items-center px-2">
+                              ...
+                            </div>
+                          );
+                        }
+
+                        // Show pages around current page
+                        for (let i = Math.max(2, page - 1); i <= Math.min(totalPages - 1, page + 1); i++) {
+                          pages.push(
+                            <Button
+                              key={i}
+                              variant={page === i ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => setPage(i)}
+                              disabled={isLoading}
+                              className="h-8 w-8 p-0"
+                            >
+                              {i}
+                            </Button>
+                          );
+                        }
+
+                        // Show ellipsis if needed
+                        if (page < totalPages - 2) {
+                          pages.push(
+                            <div key="ellipsis-end" className="flex items-center px-2">
+                              ...
+                            </div>
+                          );
+                        }
+
+                        // Always show last page if there's more than 1 page
+                        if (totalPages > 1) {
+                          pages.push(
+                            <Button
+                              key={totalPages}
+                              variant={page === totalPages ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => setPage(totalPages)}
+                              disabled={isLoading}
+                              className="h-8 w-8 p-0"
+                            >
+                              {totalPages}
+                            </Button>
+                          );
+                        }
+
+                        return pages;
+                      })()}
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPage(p => p + 1)}
+                        disabled={!data.data.next || isLoading}
+                        className="h-8"
+                      >
+                        Next
+                      </Button>
+                    </div>
                   </div>
-                  <Button
-                    variant="outline"
-                    onClick={() => setPage(p => p + 1)}
-                    disabled={!data.data.next || isLoading}
-                  >
-                    Next
-                  </Button>
                 </div>
               )}
             </>

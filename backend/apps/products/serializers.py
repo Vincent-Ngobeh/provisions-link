@@ -44,7 +44,8 @@ class ProductListSerializer(serializers.ModelSerializer):
 
     def get_primary_image(self, obj):
         """Safely return primary image URL or None"""
-        if not obj.primary_image:
+        # Check if primary_image exists and has a value (not empty string)
+        if not obj.primary_image or obj.primary_image.name in ('', None):
             return None
         try:
             if hasattr(obj.primary_image, 'url'):
@@ -95,7 +96,8 @@ class ProductDetailSerializer(serializers.ModelSerializer):
 
     def get_primary_image(self, obj):
         """Safely return primary image URL or None"""
-        if not obj.primary_image:
+        # Check if primary_image exists and has a value (not empty string)
+        if not obj.primary_image or obj.primary_image.name in ('', None):
             return None
         try:
             if hasattr(obj.primary_image, 'url'):

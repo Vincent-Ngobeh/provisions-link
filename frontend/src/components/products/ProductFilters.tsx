@@ -25,14 +25,18 @@ interface ProductFiltersProps {
   onClose?: () => void;
 }
 
+// Map display names to backend field names
 const ALLERGENS = [
-  'gluten',
-  'dairy',
-  'eggs',
-  'nuts',
-  'soy',
-  'fish',
-  'shellfish',
+  { value: 'cereals_containing_gluten', label: 'Gluten' },
+  { value: 'milk', label: 'Dairy' },
+  { value: 'eggs', label: 'Eggs' },
+  { value: 'tree_nuts', label: 'Tree Nuts' },
+  { value: 'peanuts', label: 'Peanuts' },
+  { value: 'fish', label: 'Fish' },
+  { value: 'crustaceans', label: 'Shellfish (Crustaceans)' },
+  { value: 'soybeans', label: 'Soy' },
+  { value: 'sesame', label: 'Sesame' },
+  { value: 'molluscs', label: 'Molluscs' },
 ];
 
 const FSA_RATINGS = [
@@ -63,10 +67,10 @@ export function ProductFilters({ filters, onChange, onClose }: ProductFiltersPro
     onChange({ ...filters, categories: newCategories });
   };
 
-  const handleAllergenToggle = (allergen: string) => {
-    const newAllergens = filters.allergenFree.includes(allergen)
-      ? filters.allergenFree.filter(a => a !== allergen)
-      : [...filters.allergenFree, allergen];
+  const handleAllergenToggle = (allergenValue: string) => {
+    const newAllergens = filters.allergenFree.includes(allergenValue)
+      ? filters.allergenFree.filter(a => a !== allergenValue)
+      : [...filters.allergenFree, allergenValue];
     
     onChange({ ...filters, allergenFree: newAllergens });
   };
@@ -239,17 +243,17 @@ export function ProductFilters({ filters, onChange, onClose }: ProductFiltersPro
           <Label className="text-sm font-medium">Allergen Free</Label>
           <div className="space-y-1.5">
             {ALLERGENS.map((allergen) => (
-              <div key={allergen} className="flex items-center space-x-2">
+              <div key={allergen.value} className="flex items-center space-x-2">
                 <Checkbox
-                  id={`allergen-${allergen}`}
-                  checked={filters.allergenFree.includes(allergen)}
-                  onCheckedChange={() => handleAllergenToggle(allergen)}
+                  id={`allergen-${allergen.value}`}
+                  checked={filters.allergenFree.includes(allergen.value)}
+                  onCheckedChange={() => handleAllergenToggle(allergen.value)}
                 />
                 <label
-                  htmlFor={`allergen-${allergen}`}
-                  className="text-xs font-normal leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer capitalize"
+                  htmlFor={`allergen-${allergen.value}`}
+                  className="text-xs font-normal leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
                 >
-                  {allergen}
+                  {allergen.label}
                 </label>
               </div>
             ))}

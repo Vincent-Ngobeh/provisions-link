@@ -430,6 +430,14 @@ class ProductService(BaseService):
             # Format results
             products = []
             for product in page_obj:
+                # Safely get primary image URL
+                primary_image_url = None
+                if product.primary_image and product.primary_image.name not in ('', None):
+                    try:
+                        primary_image_url = product.primary_image.url
+                    except (ValueError, AttributeError):
+                        pass
+
                 product_data = {
                     'id': product.id,
                     'name': product.name,
@@ -450,7 +458,7 @@ class ProductService(BaseService):
                     'in_stock': product.in_stock,
                     'stock_quantity': product.stock_quantity,
                     'contains_allergens': product.contains_allergens,
-                    'primary_image': product.primary_image,
+                    'primary_image': primary_image_url,
                     'tags': [
                         {'id': tag.id, 'name': tag.name}
                         for tag in product.tags.all()
@@ -477,26 +485,11 @@ class ProductService(BaseService):
 
             return ServiceResult.ok({
                 'products': products,
-                'pagination': {
-                    'page': page,
-                    'page_size': page_size,
-                    'total_pages': paginator.num_pages,
-                    'total_products': paginator.count,
-                    'has_next': page_obj.has_next(),
-                    'has_previous': page_obj.has_previous()
-                },
-                'filters_applied': {
-                    'search': search_query,
-                    'category': category_id,
-                    'vendor': vendor_id,
-                    'tags': tag_ids,
-                    'price_range': [min_price, max_price] if min_price or max_price else None,
-                    'in_stock_only': in_stock_only,
-                    'allergen_free': allergen_free,
-                    'min_fsa_rating': min_fsa_rating,
-                    'location': postcode,
-                    'radius_km': radius_km
-                }
+                'count': paginator.count,
+                'next': f'?page={page + 1}' if page_obj.has_next() else None,
+                'previous': f'?page={page - 1}' if page_obj.has_previous() else None,
+                'results': products,
+                'radius_km': radius_km
             })
 
         except Exception as e:
