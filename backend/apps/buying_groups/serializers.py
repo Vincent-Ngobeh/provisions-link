@@ -14,6 +14,7 @@ class ProductForGroupSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(
         source='category.name', read_only=True)
     in_stock = serializers.BooleanField(read_only=True)
+    primary_image = serializers.SerializerMethodField()
 
     class Meta:
         from apps.products.models import Product
@@ -23,6 +24,17 @@ class ProductForGroupSerializer(serializers.ModelSerializer):
             'price', 'price_with_vat', 'unit', 'primary_image', 'stock_quantity',
             'in_stock', 'contains_allergens', 'allergen_info', 'allergen_statement'
         ]
+
+    def get_primary_image(self, obj):
+        """Safely return primary image URL or None"""
+        if not obj.primary_image:
+            return None
+        try:
+            if hasattr(obj.primary_image, 'url'):
+                return obj.primary_image.url
+        except (ValueError, AttributeError):
+            pass
+        return None
 
 
 class BuyingGroupListSerializer(serializers.ModelSerializer):

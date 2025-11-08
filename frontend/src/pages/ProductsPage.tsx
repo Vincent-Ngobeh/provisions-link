@@ -83,34 +83,29 @@ export function ProductsPage() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['products', apiParams, needsSearchEndpoint],
     queryFn: async () => {
-      if (needsSearchEndpoint) {
-        // Use POST search for advanced filters
-        const response = await productsApi.search(apiParams);
-        return response;
-      } else {
-        // Use GET list for simple filters
-        return productsApi.list(apiParams);
+      try {
+        if (needsSearchEndpoint) {
+          // Use POST search for advanced filters
+          console.log('Sending POST search request with params:', apiParams);
+          const response = await productsApi.search(apiParams);
+          return response;
+        } else {
+          // Use GET list for simple filters
+          console.log('Sending GET list request with params:', apiParams);
+          return productsApi.list(apiParams);
+        }
+      } catch (error: any) {
+        console.error('API Error:', error);
+        console.error('Error response:', error.response?.data);
+        throw error;
       }
     },
   });
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    setPage(1);
-    updateUrlParams();
-  };
-
-  // Memoize callback to prevent recreation on every render
-  const handleFiltersChange = useCallback((newFilters: ProductFiltersState) => {
-    setFilters(newFilters);
-    setPage(1);
-    updateUrlParams(newFilters);
-  }, []); // Empty deps - function never changes
-
-  const updateUrlParams = (filtersToUse = filters) => {
+  const updateUrlParams = useCallback((filtersToUse: ProductFiltersState, searchQueryToUse: string) => {
     const params = new URLSearchParams();
 
-    if (searchQuery) params.set('search', searchQuery);
+    if (searchQueryToUse) params.set('search', searchQueryToUse);
     if (filtersToUse.categories.length > 0) params.set('categories', filtersToUse.categories.join(','));
     if (filtersToUse.tags.length > 0) params.set('tags', filtersToUse.tags.join(','));
     if (filtersToUse.minPrice > 0) params.set('minPrice', filtersToUse.minPrice.toString());
@@ -120,7 +115,20 @@ export function ProductsPage() {
     if (filtersToUse.minFsaRating) params.set('minFsa', filtersToUse.minFsaRating.toString());
 
     setSearchParams(params);
+  }, [setSearchParams]);
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    setPage(1);
+    updateUrlParams(filters, searchQuery);
   };
+
+  // Memoize callback to prevent recreation on every render
+  const handleFiltersChange = useCallback((newFilters: ProductFiltersState) => {
+    setFilters(newFilters);
+    setPage(1);
+    updateUrlParams(newFilters, searchQuery);
+  }, [updateUrlParams, searchQuery]);
 
   const activeFiltersCount =
     filters.categories.length +

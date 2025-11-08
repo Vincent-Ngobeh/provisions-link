@@ -53,9 +53,21 @@ export default function VendorsPage() {
   });
 
   const isLoading = useLocationFilter ? isLoadingLocation : isLoadingAll;
-  const vendors: Vendor[] = useLocationFilter
+  
+  // Get raw vendor data
+  const rawVendors: Vendor[] = useLocationFilter
     ? locationData?.data?.vendors || []
     : allVendorsData?.data?.results || [];
+
+  // Apply FSA rating filter client-side for name search
+  const vendors: Vendor[] = !useLocationFilter && minRating !== 'all'
+    ? rawVendors.filter(v => {
+        const rating = v.fsa_rating_value;
+        if (rating === null || rating === undefined) return false;
+        const minRatingNum = parseInt(minRating);
+        return rating >= minRatingNum;
+      })
+    : rawVendors;
 
   const handleLocationSearch = () => {
     if (locationPostcode.trim()) {

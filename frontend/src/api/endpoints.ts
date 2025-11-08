@@ -395,10 +395,10 @@ export const addressesApi = {
   },
 };
 
-// Categories endpoint (for filters)
+// Categories endpoint (for filters) - FIXED: Changed to PaginatedResponse
 export const categoriesApi = {
-  list: async (params?: { parent?: number | 'null' }): Promise<ApiResponse<any[]>> => {
-    const { data } = await apiClient.get('/categories/', { params });
+  list: async (params?: { parent?: number | 'null' }): Promise<ApiResponse<PaginatedResponse<any>>> => {
+    const { data } = await apiClient.get<PaginatedResponse<any>>('/categories/', { params });
     return { data };
   },
 

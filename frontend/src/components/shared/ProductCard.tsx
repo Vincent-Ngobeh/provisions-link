@@ -152,14 +152,9 @@ export function ProductCard({ product }: ProductCardProps) {
         
         <Button
           className="flex-1"
-          disabled={!product.in_stock}
-          asChild={product.in_stock}
+          asChild
         >
-          {product.in_stock ? (
-            <Link to={`/products/${product.id}`}>View Details</Link>
-          ) : (
-            <>Out of Stock</>
-          )}
+          <Link to={`/products/${product.id}`}>View Details</Link>
         </Button>
       </CardFooter>
     </Card>

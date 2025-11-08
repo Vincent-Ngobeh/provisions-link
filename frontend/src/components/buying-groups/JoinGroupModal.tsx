@@ -117,7 +117,11 @@ export function JoinGroupModal({
             
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">Delivery Area</span>
-              <span className="font-medium text-xs">{group.area_name} ({group.radius_km}km radius)</span>
+              <span className="font-medium text-xs">
+                {group.area_name}
+                {group.product?.vendor?.postcode && `, ${group.product.vendor.postcode}`}
+                {' '}({group.radius_km}km radius)
+              </span>
             </div>
             
             <div className="flex items-center justify-between">
@@ -175,6 +179,7 @@ export function JoinGroupModal({
             />
             <p className="text-xs text-muted-foreground">
               Must be within {group.radius_km}km of {group.area_name}
+              {group.product?.vendor?.postcode && `, ${group.product.vendor.postcode}`}
             </p>
           </div>
 

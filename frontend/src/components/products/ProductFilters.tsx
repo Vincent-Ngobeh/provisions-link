@@ -1,3 +1,5 @@
+import { useQuery } from '@tanstack/react-query';
+import { categoriesApi } from '@/api/endpoints';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -23,16 +25,6 @@ interface ProductFiltersProps {
   onClose?: () => void;
 }
 
-// Mock data - replace with actual API calls
-const CATEGORIES = [
-  { id: 1, name: 'Vegetables' },
-  { id: 2, name: 'Fruits' },
-  { id: 3, name: 'Dairy' },
-  { id: 4, name: 'Meat & Poultry' },
-  { id: 5, name: 'Seafood' },
-  { id: 6, name: 'Bakery' },
-];
-
 const ALLERGENS = [
   'gluten',
   'dairy',
@@ -50,10 +42,23 @@ const FSA_RATINGS = [
 ];
 
 export function ProductFilters({ filters, onChange, onClose }: ProductFiltersProps) {
+  // Fetch categories from API
+  const { data: categoriesData } = useQuery({
+    queryKey: ['categories'],
+    queryFn: () => categoriesApi.list(),
+  });
+
+  // Extract categories from paginated response
+  const categories = categoriesData?.data?.results || [];
+
+  console.log('Categories data:', categoriesData);
+  console.log('Categories array:', categories);
+
   const handleCategoryToggle = (categoryId: number) => {
+    // Single-select: toggle on/off
     const newCategories = filters.categories.includes(categoryId)
-      ? filters.categories.filter(id => id !== categoryId)
-      : [...filters.categories, categoryId];
+      ? [] // Deselect if already selected
+      : [categoryId]; // Select only this category
     
     onChange({ ...filters, categories: newCategories });
   };
@@ -138,21 +143,25 @@ export function ProductFilters({ filters, onChange, onClose }: ProductFiltersPro
         <div className="space-y-2">
           <Label className="text-sm font-medium">Categories</Label>
           <div className="space-y-1.5">
-            {CATEGORIES.map((category) => (
-              <div key={category.id} className="flex items-center space-x-2">
-                <Checkbox
-                  id={`category-${category.id}`}
-                  checked={filters.categories.includes(category.id)}
-                  onCheckedChange={() => handleCategoryToggle(category.id)}
-                />
-                <label
-                  htmlFor={`category-${category.id}`}
-                  className="text-xs font-normal leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-                >
-                  {category.name}
-                </label>
-              </div>
-            ))}
+            {categories.length === 0 ? (
+              <p className="text-xs text-muted-foreground">Loading categories...</p>
+            ) : (
+              categories.map((category: any) => (
+                <div key={category.id} className="flex items-center space-x-2">
+                  <Checkbox
+                    id={`category-${category.id}`}
+                    checked={filters.categories.includes(category.id)}
+                    onCheckedChange={() => handleCategoryToggle(category.id)}
+                  />
+                  <label
+                    htmlFor={`category-${category.id}`}
+                    className="text-xs font-normal leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                  >
+                    {category.name}
+                  </label>
+                </div>
+              ))
+            )}
           </div>
         </div>
 
