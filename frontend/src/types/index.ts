@@ -63,7 +63,7 @@ export interface Vendor {
   delivery_radius_km: number;
   min_order_value: string;
   logo_url?: string;
-  distance_km?: string;
+  distance_km?: number;
   phone_number?: string; 
   is_approved?: boolean; 
   fsa_verified?: boolean; 

@@ -50,7 +50,7 @@ export function VendorCard({ vendor, onClick }: VendorCardProps) {
               <MapPin className="h-4 w-4" />
               <span>{vendor.postcode}</span>
               {vendor.distance_km && (
-                <span className="text-xs">({vendor.distance_km}km away)</span>
+                <span className="text-xs">({vendor.distance_km.toFixed(1)}km away)</span>
               )}
             </div>
             

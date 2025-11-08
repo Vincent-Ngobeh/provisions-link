@@ -74,6 +74,14 @@ class VendorViewSet(viewsets.ModelViewSet):
                                           filter=Q(products__buying_groups__status='open'))
             )
 
+        # Search filtering by name or description
+        search_query = self.request.query_params.get('search')
+        if search_query:
+            queryset = queryset.filter(
+                Q(business_name__icontains=search_query) |
+                Q(description__icontains=search_query)
+            )
+
         # Location-based filtering
         postcode = self.request.query_params.get('near_postcode')
         radius_km = self.request.query_params.get('radius_km', 10)

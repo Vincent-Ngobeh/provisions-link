@@ -277,7 +277,7 @@ export function ProductsPage() {
 
                       {/* Generate page numbers */}
                       {(() => {
-                        const totalPages = data.data.pagination?.total_pages || Math.ceil(data.data.count / 12);
+                        const totalPages = Math.ceil(data.data.count / 12);
                         const pages = [];
 
                         // Always show first page

@@ -51,8 +51,7 @@ class VendorService(BaseService):
         delivery_radius_km: int,
         min_order_value: Decimal,
         phone_number: Optional[str] = None,
-        vat_number: Optional[str] = None,
-        logo_url: Optional[str] = None
+        vat_number: Optional[str] = None
     ) -> ServiceResult:
         """
         Register a new vendor account.
@@ -66,7 +65,6 @@ class VendorService(BaseService):
             min_order_value: Minimum order value
             phone_number: Optional business phone
             vat_number: Optional VAT registration number
-            logo_url: Optional logo URL
 
         Returns:
             ServiceResult containing created Vendor or error
@@ -125,7 +123,6 @@ class VendorService(BaseService):
                 delivery_radius_km=delivery_radius_km,
                 min_order_value=min_order_value,
                 vat_number=vat_number or '',
-                logo_url=logo_url or '',
                 commission_rate=self.DEFAULT_COMMISSION_RATE,
                 is_approved=False,  # Requires admin approval
                 fsa_verified=False,  # Requires FSA check
@@ -216,7 +213,7 @@ class VendorService(BaseService):
             # Allowed fields for update
             allowed_fields = [
                 'description', 'phone_number', 'delivery_radius_km',
-                'min_order_value', 'logo_url'
+                'min_order_value'
             ]
 
             # Filter and validate update fields
@@ -588,16 +585,29 @@ class VendorService(BaseService):
                 )
 
                 if vendor_distance <= vendor.delivery_radius_km:
+                    # Safely get logo URL
+                    logo_url = None
+                    if vendor.logo and vendor.logo.name not in ('', None):
+                        try:
+                            logo_url = vendor.logo.url
+                        except (ValueError, AttributeError):
+                            pass
+
                     results.append({
                         'id': vendor.id,
                         'business_name': vendor.business_name,
+                        'slug': vendor.slug,
                         'description': vendor.description[:200],
-                        'fsa_rating': vendor.fsa_rating_value,
+                        'postcode': vendor.postcode,
+                        'fsa_rating_value': vendor.fsa_rating_value,
+                        'fsa_rating_display': vendor.fsa_rating_display,
                         'min_order_value': float(vendor.min_order_value),
                         'delivery_radius_km': vendor.delivery_radius_km,
                         'distance_km': float(vendor_distance),
-                        'logo_url': vendor.logo_url,
-                        'product_count': vendor.products.filter(is_active=True).count()
+                        'logo_url': logo_url,
+                        'product_count': vendor.products.filter(is_active=True).count(),
+                        'is_approved': vendor.is_approved,
+                        'stripe_onboarding_complete': vendor.stripe_onboarding_complete,
                     })
 
             return ServiceResult.ok({
