@@ -2,6 +2,7 @@
 Geocoding service for converting UK postcodes to geographic coordinates.
 Supports multiple providers with fallback capability.
 """
+import logging
 import requests
 import re
 from typing import Optional, Dict, Any, Tuple
@@ -16,6 +17,8 @@ from django.utils import timezone
 from apps.core.services.base import (
     BaseService, ExternalServiceError, ServiceResult, ValidationError
 )
+
+logger = logging.getLogger(__name__)
 
 
 class GeocodingService(BaseService):
@@ -85,21 +88,29 @@ class GeocodingService(BaseService):
                     error_code="INVALID_POSTCODE"
                 )
 
+            logger.info(f"Geocoding postcode: {postcode}")
+
             # Check cache first
             cached_result = self._get_cached_location(postcode)
             if cached_result:
+                logger.info(
+                    f"Using cached location for {postcode}: {cached_result}")
                 return ServiceResult.ok(cached_result)
 
             # Try primary provider (Mapbox if configured)
             if self.use_mapbox:
+                logger.info(f"Using Mapbox for {postcode}")
                 result = self._geocode_with_mapbox(postcode)
                 if result.success:
+                    logger.info(f"Mapbox success: {result.data}")
                     self._cache_location(postcode, result.data)
                     return result
 
             # Fallback to Nominatim
+            logger.info(f"Using Nominatim for {postcode}")
             result = self._geocode_with_nominatim(postcode)
             if result.success:
+                logger.info(f"Nominatim success: {result.data}")
                 self._cache_location(postcode, result.data)
                 return result
 
@@ -110,8 +121,11 @@ class GeocodingService(BaseService):
                     f"Using approximate location for {postcode}",
                     postcode=postcode
                 )
+                logger.warning(
+                    f"Approximate location for {postcode}: {area_result}")
                 return ServiceResult.ok(area_result)
 
+            logger.error(f"Could not geocode postcode {postcode}")
             return ServiceResult.fail(
                 f"Could not geocode postcode {postcode}",
                 error_code="GEOCODING_FAILED"
@@ -274,7 +288,8 @@ class GeocodingService(BaseService):
             nearby = []
 
             for area_code, area_data in self.POSTCODE_AREAS.items():
-                area_point = Point(area_data['lng'], area_data['lat'])
+                area_point = Point(
+                    area_data['lng'], area_data['lat'], srid=4326)
                 distance = self.calculate_distance(center_point, area_point)
 
                 if distance <= radius_km:
@@ -401,7 +416,7 @@ class GeocodingService(BaseService):
                 coordinates = feature['geometry']['coordinates']
 
                 return ServiceResult.ok({
-                    'point': Point(coordinates[0], coordinates[1]),
+                    'point': Point(coordinates[0], coordinates[1], srid=4326),
                     'lng': coordinates[0],
                     'lat': coordinates[1],
                     'area_name': feature.get('place_name', postcode),
@@ -457,7 +472,7 @@ class GeocodingService(BaseService):
                 lng = float(result['lon'])
 
                 return ServiceResult.ok({
-                    'point': Point(lng, lat),
+                    'point': Point(lng, lat, srid=4326),
                     'lng': lng,
                     'lat': lat,
                     'area_name': result.get('display_name', postcode).split(',')[0],
@@ -517,7 +532,7 @@ class GeocodingService(BaseService):
                         break
 
                 return ServiceResult.ok({
-                    'point': Point(coordinates[0], coordinates[1]),
+                    'point': Point(coordinates[0], coordinates[1], srid=4326),
                     'lng': coordinates[0],
                     'lat': coordinates[1],
                     'formatted_address': feature.get('place_name', address),
@@ -575,7 +590,7 @@ class GeocodingService(BaseService):
                 address_parts = result.get('address', {})
 
                 return ServiceResult.ok({
-                    'point': Point(lng, lat),
+                    'point': Point(lng, lat, srid=4326),
                     'lng': lng,
                     'lat': lat,
                     'formatted_address': result.get('display_name', address),
@@ -712,7 +727,7 @@ class GeocodingService(BaseService):
         if area in self.POSTCODE_AREAS:
             area_data = self.POSTCODE_AREAS[area]
             return {
-                'point': Point(area_data['lng'], area_data['lat']),
+                'point': Point(area_data['lng'], area_data['lat'], srid=4326),
                 'lng': area_data['lng'],
                 'lat': area_data['lat'],
                 'area_name': area_data['area'],

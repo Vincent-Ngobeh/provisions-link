@@ -37,7 +37,8 @@ import {
   Users,
   Clock,
   Navigation,
-  TrendingUp
+  TrendingUp,
+  CheckCircle
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import type { BuyingGroupDetail, GroupCommitment } from '@/types';
@@ -140,13 +141,13 @@ function JoinGroupForm({
         setPostcode(addr.postcode);
         setError('');
       } else {
+        // Keep the address selected but show error
+        setSelectedAddressId(addressId);
+        setPostcode(addr.postcode);
         setError(
-          `This address is ${result.distance_km}km from the group center. ` +
-          `Maximum allowed distance is ${result.max_distance_km}km. ` +
-          `Please select a different address or create a new one within the delivery area.`
+          `This address is too far from the delivery area (${result.distance_km.toFixed(1)}km away, maximum ${result.max_distance_km}km allowed). ` +
+          `Please select a different address within the delivery area to continue.`
         );
-        setSelectedAddressId('');
-        setPostcode('');
       }
     } catch (err: any) {
       setError('Failed to validate address. Please try again.');
@@ -412,10 +413,21 @@ function JoinGroupForm({
         </Button>
 
         {isValidatingAddress && (
-          <p className="text-xs text-muted-foreground flex items-center gap-2">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            Validating address is within delivery area...
-          </p>
+          <Alert>
+            <AlertDescription className="flex items-center gap-2 text-xs">
+              <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" />
+              <span>Validating address is within delivery area...</span>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {selectedAddressId && !isValidatingAddress && !error && (
+          <Alert className="border-green-500 bg-green-50">
+            <AlertDescription className="flex items-center gap-2 text-xs text-green-700">
+              <CheckCircle className="h-4 w-4 text-green-600 flex-shrink-0" />
+              <span>Address validated successfully! Within delivery area.</span>
+            </AlertDescription>
+          </Alert>
         )}
       </div>
 
@@ -493,7 +505,7 @@ function JoinGroupForm({
         
         <Button 
           type="submit" 
-          disabled={commitMutation.isPending || !selectedAddressId || isValidatingAddress}
+          disabled={commitMutation.isPending || !selectedAddressId || isValidatingAddress || !!error}
           className="gap-2"
         >
           {commitMutation.isPending ? (
@@ -525,7 +537,7 @@ function InlineAddressForm({
   onCancel: () => void;
 }) {
   const [formData, setFormData] = useState({
-    address_name: 'Home',
+    address_name: 'home',
     recipient_name: '',
     line1: '',
     line2: '',
@@ -539,28 +551,42 @@ function InlineAddressForm({
 
   const createAddressMutation = useMutation({
     mutationFn: async (data: any) => {
-      // First validate the address is in radius
-      const tempAddr = { postcode: data.postcode };
+      console.log('Creating address with data:', data);
       
       // Create the address
       const response = await addressesApi.create(data);
+      console.log('Address created:', response.data);
       
       // Validate it's in radius
+      let validationFailed = false;
       try {
+        console.log('Validating address distance for group', groupId, 'address', response.data.id);
         const validationResponse = await buyingGroupsApi.validateAddress(groupId, response.data.id);
+        console.log('Validation response:', validationResponse.data);
         
         if (!validationResponse.data.valid) {
+          validationFailed = true;
           // Delete the address we just created since it's invalid
           await addressesApi.delete(response.data.id);
           
           throw new Error(
-            `This address is ${validationResponse.data.distance_km}km from the group center. ` +
+            `This address is ${validationResponse.data.distance_km.toFixed(1)}km from the group center. ` +
             `Maximum allowed is ${radiusKm}km. Please use an address within the delivery area.`
           );
         }
+        
+        console.log('Address validation passed!');
       } catch (err: any) {
-        // Delete the address if validation failed
-        await addressesApi.delete(response.data.id);
+        console.error('Validation error:', err);
+        // Only delete if we haven't already deleted it
+        if (!validationFailed) {
+          // Validation API call failed - delete the address
+          try {
+            await addressesApi.delete(response.data.id);
+          } catch (deleteErr) {
+            console.error('Error deleting address after validation failure:', deleteErr);
+          }
+        }
         throw err;
       }
       
@@ -570,6 +596,8 @@ function InlineAddressForm({
       onSuccess(newAddress);
     },
     onError: (err: any) => {
+      console.error('Address creation error:', err);
+      console.error('Error response:', err.response?.data);
       const message = err.message || err.response?.data?.error || 'Failed to create address';
       setError(message);
     },
@@ -580,7 +608,7 @@ function InlineAddressForm({
     setError('');
 
     // Basic validation
-    if (!formData.recipient_name || !formData.line1 || !formData.city || !formData.postcode) {
+    if (!formData.recipient_name || !formData.line1 || !formData.city || !formData.postcode || !formData.phone_number) {
       setError('Please fill in all required fields');
       return;
     }
@@ -591,22 +619,28 @@ function InlineAddressForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <Alert>
-        <Info className="h-4 w-4" />
-        <AlertDescription className="text-xs">
-          Address must be within {radiusKm}km of the group delivery area
+        <AlertDescription className="flex items-center gap-2 text-xs">
+          <Info className="h-4 w-4 flex-shrink-0" />
+          <span>Address must be within {radiusKm}km of the group delivery area</span>
         </AlertDescription>
       </Alert>
 
       <div className="grid grid-cols-2 gap-4">
         <div className="col-span-2">
-          <Label htmlFor="address_name">Address Name *</Label>
-          <Input
-            id="address_name"
+          <Label htmlFor="address_name">Address Type *</Label>
+          <Select
             value={formData.address_name}
-            onChange={(e) => setFormData({ ...formData, address_name: e.target.value })}
-            placeholder="e.g., Home, Work, etc."
-            required
-          />
+            onValueChange={(value) => setFormData({ ...formData, address_name: value })}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="home">Home</SelectItem>
+              <SelectItem value="work">Work</SelectItem>
+              <SelectItem value="other">Other</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="col-span-2">
@@ -662,13 +696,14 @@ function InlineAddressForm({
         </div>
 
         <div className="col-span-2">
-          <Label htmlFor="phone_number">Phone Number</Label>
+          <Label htmlFor="phone_number">Phone Number *</Label>
           <Input
             id="phone_number"
             type="tel"
             value={formData.phone_number}
             onChange={(e) => setFormData({ ...formData, phone_number: e.target.value })}
             placeholder="+44 7700 900000"
+            required
           />
         </div>
 

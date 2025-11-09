@@ -2,6 +2,7 @@
 ViewSet implementations for group buying operations.
 Handles group creation, commitments, and real-time updates.
 """
+import logging
 from decimal import Decimal
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
@@ -20,6 +21,8 @@ from .serializers import (
 )
 from .services.group_buying_service import GroupBuyingService
 from apps.core.models import Address
+
+logger = logging.getLogger(__name__)
 
 
 class BuyingGroupViewSet(viewsets.ModelViewSet):
@@ -215,6 +218,7 @@ class BuyingGroupViewSet(viewsets.ModelViewSet):
 
         # Geocode the address postcode
         from apps.integrations.services.geocoding_service import GeocodingService
+
         geo_service = GeocodingService()
         location_result = geo_service.geocode_postcode(address.postcode)
 
@@ -226,7 +230,26 @@ class BuyingGroupViewSet(viewsets.ModelViewSet):
 
         # Check distance
         address_location = location_result.data['point']
-        distance_km = group.center_point.distance(address_location) / 1000
+
+        logger.info(
+            f"Validating address {address_id} (postcode: {address.postcode})")
+        logger.info(f"Group center_point: {group.center_point}")
+        logger.info(f"Address location: {address_location}")
+        logger.info(f"Group center_point type: {type(group.center_point)}")
+        logger.info(f"Address location type: {type(address_location)}")
+
+        if group.center_point is None:
+            logger.error(f"Group {group.id} has no center_point!")
+            return Response({
+                'error': 'Group has no center point configured',
+                'valid': False
+            }, status=status.HTTP_200_OK)
+
+        # Use proper geodesic distance calculation (haversine formula)
+        distance_km = float(geo_service.calculate_distance(
+            group.center_point, address_location))
+
+        logger.info(f"Calculated distance: {distance_km}km")
 
         is_valid = distance_km <= group.radius_km
 
