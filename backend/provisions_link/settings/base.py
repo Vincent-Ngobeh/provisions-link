@@ -163,7 +163,7 @@ AWS_S3_CUSTOM_DOMAIN = f'{AWS_STORAGE_BUCKET_NAME}.s3.amazonaws.com' if AWS_STOR
 AWS_S3_OBJECT_PARAMETERS = {
     'CacheControl': 'max-age=86400',
 }
-AWS_DEFAULT_ACL = 'public-read'
+AWS_DEFAULT_ACL = None  # ACLs disabled - using bucket policy instead
 AWS_S3_VERIFY = True
 
 # Primary key field configuration

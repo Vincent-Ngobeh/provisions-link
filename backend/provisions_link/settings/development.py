@@ -63,6 +63,29 @@ CORS_ALLOW_HEADERS = [
 # Email backend for development (prints to console)
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 
+# AWS S3 Configuration for Media Files (use S3 even in development)
+# This ensures images work consistently across all environments
+if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and AWS_STORAGE_BUCKET_NAME:
+    # Use S3 for media storage
+    DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
+
+    # Override the S3 custom domain to use regional endpoint
+    AWS_S3_CUSTOM_DOMAIN = f'{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.amazonaws.com'
+
+    # Media URL pointing to S3
+    MEDIA_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/media/'
+
+    # Ensure public read access
+    # AWS_DEFAULT_ACL = 'public-read'
+    AWS_QUERYSTRING_AUTH = False
+
+    # Optional: Set location for media files in bucket
+    AWS_LOCATION = 'media'
+else:
+    # Fallback to local storage if S3 not configured
+    MEDIA_URL = '/media/'
+    MEDIA_ROOT = BASE_DIR / 'media'
+
 # Django Debug Toolbar (optional but useful)
 if DEBUG:
     INSTALLED_APPS += ['debug_toolbar']
