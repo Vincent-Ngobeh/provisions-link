@@ -141,10 +141,72 @@ class BuyingGroupViewSet(viewsets.ModelViewSet):
         }, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
+    def create_payment_intent(self, request, pk=None):
+        """
+        Create a payment intent for a group commitment WITHOUT creating the commitment.
+        This is step 1 of the two-step payment flow.
+        POST /api/buying-groups/{id}/create_payment_intent/
+
+        Body:
+        {
+            "quantity": 5,
+            "postcode": "E2 7DJ",
+            "delivery_address_id": 12
+        }
+
+        Returns:
+        {
+            "client_secret": "pi_xxx_secret_xxx",
+            "intent_id": "pi_xxx",
+            "amount": 117.56
+        }
+        """
+        group = self.get_object()
+
+        quantity = request.data.get('quantity')
+        buyer_postcode = request.data.get('postcode')
+        delivery_address_id = request.data.get('delivery_address_id')
+
+        if not all([quantity, buyer_postcode, delivery_address_id]):
+            return Response({
+                'error': 'quantity, postcode, and delivery_address_id are required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        result = self.service.create_payment_intent_for_commitment(
+            group_id=group.id,
+            buyer=request.user,
+            quantity=int(quantity),
+            buyer_postcode=buyer_postcode,
+            delivery_address_id=int(delivery_address_id)
+        )
+
+        if result.success:
+            return Response({
+                'client_secret': result.data['client_secret'],
+                'intent_id': result.data['intent_id'],
+                'amount': float(result.data['amount'])
+            }, status=status.HTTP_200_OK)
+
+        return Response({
+            'error': result.error,
+            'error_code': result.error_code
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
     def commit(self, request, pk=None):
         """
         Commit to a buying group.
+        This is step 2 of the two-step payment flow (after payment intent is confirmed).
         POST /api/buying-groups/{id}/commit/
+
+        Body:
+        {
+            "quantity": 5,
+            "postcode": "E2 7DJ",
+            "delivery_address_id": 12,
+            "delivery_notes": "Ring doorbell",
+            "payment_intent_id": "pi_xxx"  // Optional: pre-confirmed payment intent
+        }
         """
         group = self.get_object()
 
@@ -152,6 +214,8 @@ class BuyingGroupViewSet(viewsets.ModelViewSet):
         buyer_postcode = request.data.get('postcode')
         delivery_address_id = request.data.get('delivery_address_id')
         delivery_notes = request.data.get('delivery_notes')
+        payment_intent_id = request.data.get(
+            'payment_intent_id')  # New: optional confirmed payment
 
         if not all([quantity, buyer_postcode, delivery_address_id]):
             return Response({
@@ -164,7 +228,9 @@ class BuyingGroupViewSet(viewsets.ModelViewSet):
             quantity=int(quantity),
             buyer_postcode=buyer_postcode,
             delivery_address_id=int(delivery_address_id),
-            delivery_notes=delivery_notes
+            delivery_notes=delivery_notes,
+            # Pass the confirmed payment intent if provided
+            payment_intent_id=payment_intent_id
         )
 
         if result.success:

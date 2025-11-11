@@ -184,6 +184,22 @@ export const buyingGroupsApi = {
     return { data };
   },
 
+  createPaymentIntent: async (
+    id: number,
+    intentData: {
+      quantity: number;
+      postcode: string;
+      delivery_address_id: number;
+    }
+  ): Promise<ApiResponse<{
+    client_secret: string;
+    intent_id: string;
+    amount: number;
+  }>> => {
+    const { data } = await apiClient.post(`/buying-groups/${id}/create_payment_intent/`, intentData);
+    return { data };
+  },
+
   commit: async (
     id: number, 
     commitmentData: { 
@@ -191,6 +207,7 @@ export const buyingGroupsApi = {
       postcode: string;
       delivery_address_id: number;
       delivery_notes?: string;
+      payment_intent_id?: string;  // New: optional pre-confirmed payment intent
     }
   ): Promise<ApiResponse<{
     message: string;
@@ -325,6 +342,15 @@ export const vendorsApi = {
 
   dashboard: async (id: number): Promise<ApiResponse<any>> => {
     const { data } = await apiClient.get(`/vendors/${id}/dashboard/`);
+    return { data };
+  },
+
+  generateOnboardingLink: async (id: number): Promise<ApiResponse<{
+    url: string;
+    account_id: string;
+    expires_at: number;
+  }>> => {
+    const { data } = await apiClient.post(`/vendors/${id}/generate_onboarding_link/`);
     return { data };
   },
 };

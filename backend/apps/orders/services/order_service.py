@@ -253,7 +253,8 @@ class OrderService(BaseService):
             try:
                 commitment = GroupCommitment.objects.select_related(
                     'group__product__vendor',
-                    'buyer'
+                    'buyer',
+                    'delivery_address'
                 ).get(id=commitment_id, group_id=group_id)
             except GroupCommitment.DoesNotExist:
                 return ServiceResult.fail(
@@ -277,25 +278,31 @@ class OrderService(BaseService):
                     error_code="GROUP_NOT_READY"
                 )
 
-            # Get buyer's default address
-            address = Address.objects.filter(
-                user=commitment.buyer,
-                is_default=True
-            ).first()
-
-            if not address:
-                # Use first available address
-                address = Address.objects.filter(user=commitment.buyer).first()
+            # Use the delivery address selected during commitment
+            address = commitment.delivery_address
 
             if not address:
                 return ServiceResult.fail(
-                    "No delivery address found for buyer",
+                    "No delivery address found for commitment",
                     error_code="NO_ADDRESS"
                 )
+
+            # Validate that delivery address is still within group radius
+            if address.location and group.center_point:
+                distance_km = group.center_point.distance(
+                    address.location) / 1000
+                if distance_km > group.radius_km:
+                    return ServiceResult.fail(
+                        f"Delivery address is {distance_km:.1f}km from group center (max: {group.radius_km}km). Address may have been modified.",
+                        error_code="ADDRESS_OUT_OF_RADIUS"
+                    )
 
             # Calculate prices with group discount
             product = group.product
             quantity = commitment.quantity
+
+            # Stock was already reserved/deducted during commitment creation
+            # No need to check or deduct again
 
             unit_price = product.price
             discount_multiplier = 1 - (group.discount_percent / 100)
@@ -330,7 +337,7 @@ class OrderService(BaseService):
                     total=total,
                     marketplace_fee=marketplace_fee,
                     vendor_payout=vendor_payout,
-                    delivery_notes=f"Group buying order - {group.area_name}",
+                    delivery_notes=commitment.delivery_notes or '',
                     status='pending',
                     stripe_payment_intent_id=commitment.stripe_payment_intent_id
                 )
@@ -344,6 +351,9 @@ class OrderService(BaseService):
                     total_price=subtotal,
                     discount_amount=discount_amount
                 )
+
+                # Stock was already deducted during commitment creation
+                # Don't deduct again to avoid double deduction
 
                 # Update commitment status
                 commitment.status = 'confirmed'

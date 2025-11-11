@@ -1,7 +1,7 @@
 // frontend/src/pages/VendorDashboardPage.tsx
 // Private dashboard for vendor's own account
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { vendorsApi, ordersApi, productsApi } from '@/api/endpoints';
@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { useToast } from '@/hooks/use-toast';
 import {
   LayoutDashboard,
   Package,
@@ -23,6 +24,8 @@ import {
 export default function VendorDashboardPage() {
   const navigate = useNavigate();
   const { user, isVendor } = useAuth();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   // Redirect if not a vendor
   if (!isVendor) {
@@ -45,10 +48,10 @@ export default function VendorDashboardPage() {
     enabled: isVendor,
   });
 
-  // Fetch pending orders
+  // Fetch pending orders (filtered by vendor)
   const { data: ordersData, isLoading: isLoadingOrders } = useQuery({
     queryKey: ['vendor-pending-orders'],
-    queryFn: () => ordersApi.list({ status: 'paid' }),
+    queryFn: () => ordersApi.list({ status: 'paid', vendor: user!.id }),
     enabled: isVendor,
   });
 
@@ -58,6 +61,51 @@ export default function VendorDashboardPage() {
     queryFn: () => productsApi.lowStock({ vendor: user!.id }),
     enabled: isVendor,
   });
+
+  // Stripe onboarding mutation
+  const onboardingMutation = useMutation({
+    mutationFn: () => vendorsApi.generateOnboardingLink(user!.id),
+    onSuccess: (response) => {
+      const onboardingUrl = response.data.url;
+      
+      // Open Stripe onboarding in new window
+      const stripeWindow = window.open(onboardingUrl, '_blank', 'width=800,height=800');
+      
+      if (!stripeWindow) {
+        toast({
+          title: 'Popup Blocked',
+          description: 'Please allow popups for this site and try again.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      toast({
+        title: 'Onboarding Started',
+        description: 'Complete the Stripe setup in the new window.',
+      });
+
+      // Poll for completion (optional - you can also use webhooks)
+      const pollInterval = setInterval(() => {
+        if (stripeWindow.closed) {
+          clearInterval(pollInterval);
+          // Refresh dashboard to check if onboarding completed
+          queryClient.invalidateQueries({ queryKey: ['vendor-dashboard'] });
+        }
+      }, 1000);
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Error',
+        description: error.response?.data?.error || 'Failed to start onboarding. Please try again.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const handleCompleteOnboarding = () => {
+    onboardingMutation.mutate();
+  };
 
   const dashboard = dashboardData?.data;
   const pendingOrders = ordersData?.data?.results || [];
@@ -98,9 +146,15 @@ export default function VendorDashboardPage() {
             <p className="text-yellow-800 mt-1">
               You need to complete Stripe Connect onboarding to receive payments.
             </p>
-            <Button variant="outline" size="sm" className="mt-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="mt-2"
+              onClick={handleCompleteOnboarding}
+              disabled={onboardingMutation.isPending}
+            >
               <ExternalLink className="h-4 w-4 mr-2" />
-              Complete Onboarding
+              {onboardingMutation.isPending ? 'Loading...' : 'Complete Onboarding'}
             </Button>
           </AlertDescription>
         </Alert>
@@ -119,7 +173,11 @@ export default function VendorDashboardPage() {
                 <Package className="h-5 w-5" />
                 Pending Orders ({pendingOrders.length})
               </CardTitle>
-              <Button variant="ghost" size="sm" onClick={() => navigate('/orders')}>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => navigate('/orders?vendor=true')}
+              >
                 View All
               </Button>
             </div>
@@ -158,7 +216,11 @@ export default function VendorDashboardPage() {
                 <TrendingUp className="h-5 w-5" />
                 Low Stock Alert ({lowStockProducts.length})
               </CardTitle>
-              <Button variant="ghost" size="sm" onClick={() => navigate('/products')}>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => navigate(`/products?vendor=${user!.id}`)}
+              >
                 View All
               </Button>
             </div>

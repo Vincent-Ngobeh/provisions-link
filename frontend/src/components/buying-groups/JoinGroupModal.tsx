@@ -36,11 +36,9 @@ import {
   Plus,
   Users,
   Clock,
-  Navigation,
   TrendingUp,
   CheckCircle
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
 import type { BuyingGroupDetail, GroupCommitment } from '@/types';
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || '');
@@ -90,7 +88,6 @@ function JoinGroupForm({
   onSuccess: (commitment: GroupCommitment) => void;
   onCancel: () => void;
 }) {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   
   const [quantity, setQuantity] = useState<number>(1);
@@ -99,13 +96,16 @@ function JoinGroupForm({
   const [deliveryNotes, setDeliveryNotes] = useState<string>('');
   const [error, setError] = useState<string>('');
   const [clientSecret, setClientSecret] = useState<string | null>(null);
+  const [paymentIntentId, setPaymentIntentId] = useState<string | null>(null);
   const [showAddressForm, setShowAddressForm] = useState<boolean>(false);
   const [isValidatingAddress, setIsValidatingAddress] = useState<boolean>(false);
 
-  // Fetch addresses
+  // Fetch addresses - always fetch fresh data when modal opens
   const { data: addressesData, isLoading: isLoadingAddresses } = useQuery({
     queryKey: ['addresses'],
     queryFn: () => addressesApi.list(),
+    staleTime: 0, // Always consider data stale - fetch fresh on mount
+    refetchOnMount: 'always', // Always refetch when component mounts
   });
 
   const addresses = addressesData?.data?.results || [];
@@ -156,32 +156,48 @@ function JoinGroupForm({
     }
   };
 
+  // Step 1: Create payment intent (no commitment yet)
+  const createPaymentIntentMutation = useMutation({
+    mutationFn: async (data: {
+      quantity: number;
+      postcode: string;
+      delivery_address_id: number;
+    }) => {
+      const response = await buyingGroupsApi.createPaymentIntent(group.id, data);
+      return response;
+    },
+    onSuccess: (response) => {
+      // Set client secret and intent ID to show payment form
+      setClientSecret(response.data.client_secret);
+      setPaymentIntentId(response.data.intent_id);
+    },
+    onError: (error: any) => {
+      const message = error.response?.data?.error || 'Failed to create payment. Please try again.';
+      setError(message);
+    },
+  });
+
+  // Step 2: Create commitment AFTER payment is confirmed
   const commitMutation = useMutation({
-    mutationFn: async (data: { 
-      quantity: number; 
+    mutationFn: async (data: {
+      quantity: number;
       postcode: string;
       delivery_address_id: number;
       delivery_notes?: string;
+      payment_intent_id: string;
     }) => {
       const response = await buyingGroupsApi.commit(group.id, data);
       return response;
     },
     onSuccess: (response) => {
-      // Check if payment is needed
-      const paymentIntent = response.data.payment_intent;
-      
-      if (paymentIntent?.client_secret) {
-        // Set client secret to show payment form
-        setClientSecret(paymentIntent.client_secret);
-      } else {
-        // No payment needed, complete immediately
-        queryClient.invalidateQueries({ queryKey: ['buying-group', group.id] });
-        queryClient.invalidateQueries({ queryKey: ['buying-groups'] });
-        onSuccess(response.data.commitment);
-      }
+      // Commitment created successfully
+      queryClient.invalidateQueries({ queryKey: ['buying-group', group.id] });
+      queryClient.invalidateQueries({ queryKey: ['buying-groups'] });
+      queryClient.invalidateQueries({ queryKey: ['my-commitments'] });
+      onSuccess(response.data.commitment);
     },
     onError: (error: any) => {
-      const message = error.response?.data?.error || 'Failed to join group. Please try again.';
+      const message = error.response?.data?.error || 'Failed to create commitment. Please try again.';
       setError(message);
     },
   });
@@ -206,11 +222,11 @@ function JoinGroupForm({
       return;
     }
 
-    commitMutation.mutate({
+    // Step 1: Create payment intent only (no commitment yet)
+    createPaymentIntentMutation.mutate({
       quantity,
       postcode: postcode.trim().toUpperCase(),
       delivery_address_id: parseInt(selectedAddressId),
-      delivery_notes: deliveryNotes || undefined,
     });
   };
 
@@ -240,20 +256,27 @@ function JoinGroupForm({
   }
 
   // If payment is needed, show payment form
-  if (clientSecret) {
+  if (clientSecret && paymentIntentId) {
     return (
       <Elements stripe={stripePromise} options={{ clientSecret }}>
         <PaymentForm
           group={group}
           quantity={quantity}
           totalPrice={totalPrice}
-          clientSecret={clientSecret}
           onSuccess={() => {
-            queryClient.invalidateQueries({ queryKey: ['buying-group', group.id] });
-            queryClient.invalidateQueries({ queryKey: ['buying-groups'] });
-            onSuccess(commitMutation.data!.data.commitment);
+            // Payment confirmed by Stripe - now create commitment (Step 2)
+            commitMutation.mutate({
+              quantity,
+              postcode: postcode.trim().toUpperCase(),
+              delivery_address_id: parseInt(selectedAddressId),
+              delivery_notes: deliveryNotes || undefined,
+              payment_intent_id: paymentIntentId,
+            });
           }}
-          onCancel={() => setClientSecret(null)}
+          onCancel={() => {
+            setClientSecret(null);
+            setPaymentIntentId(null);
+          }}
         />
       </Elements>
     );
@@ -265,7 +288,7 @@ function JoinGroupForm({
       <InlineAddressForm
         groupId={group.id}
         radiusKm={group.radius_km}
-        onSuccess={(newAddress) => {
+        onSuccess={() => {
           setShowAddressForm(false);
           queryClient.invalidateQueries({ queryKey: ['addresses'] });
           // Address will be auto-selected via useEffect after addresses refresh
@@ -498,17 +521,17 @@ function JoinGroupForm({
           type="button"
           variant="outline"
           onClick={onCancel}
-          disabled={commitMutation.isPending}
+          disabled={createPaymentIntentMutation.isPending}
         >
           Cancel
         </Button>
         
         <Button 
           type="submit" 
-          disabled={commitMutation.isPending || !selectedAddressId || isValidatingAddress || !!error}
+          disabled={createPaymentIntentMutation.isPending || !selectedAddressId || isValidatingAddress || !!error}
           className="gap-2"
         >
-          {commitMutation.isPending ? (
+          {createPaymentIntentMutation.isPending ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" />
               Processing...
@@ -759,14 +782,12 @@ function PaymentForm({
   group,
   quantity,
   totalPrice,
-  clientSecret,
   onSuccess,
   onCancel,
 }: {
   group: BuyingGroupDetail;
   quantity: number;
   totalPrice: number;
-  clientSecret: string;
   onSuccess: () => void;
   onCancel: () => void;
 }) {

@@ -291,6 +291,114 @@ class GroupBuyingService(BaseService):
                 error_code="SEARCH_FAILED"
             )
 
+    def create_payment_intent_for_commitment(
+        self,
+        group_id: int,
+        buyer: User,
+        quantity: int,
+        buyer_postcode: str,
+        delivery_address_id: int
+    ) -> ServiceResult:
+        """
+        Create a Stripe payment intent for a group commitment WITHOUT creating the commitment yet.
+        This is step 1 of the two-step payment flow.
+
+        Args:
+            group_id: ID of the group to join
+            buyer: User who wants to commit
+            quantity: Quantity they want to buy
+            buyer_postcode: Buyer's postcode (for distance calculation)
+            delivery_address_id: ID of delivery address
+
+        Returns:
+            ServiceResult containing payment intent details (client_secret, intent_id)
+        """
+        try:
+            # Validate delivery address
+            try:
+                delivery_address = Address.objects.get(
+                    id=delivery_address_id, user=buyer)
+            except Address.DoesNotExist:
+                return ServiceResult.fail(
+                    "Invalid delivery address",
+                    error_code="INVALID_ADDRESS"
+                )
+
+            # Get group to calculate payment amount
+            try:
+                group = BuyingGroup.objects.select_related(
+                    'product__vendor').get(id=group_id)
+            except BuyingGroup.DoesNotExist:
+                return ServiceResult.fail(
+                    "Group not found",
+                    error_code="GROUP_NOT_FOUND"
+                )
+
+            # Calculate prices with group discount
+            product = group.product
+            vendor = product.vendor
+
+            unit_price = product.price
+            discount_multiplier = 1 - (group.discount_percent / 100)
+            discounted_price = unit_price * discount_multiplier
+            subtotal = discounted_price * quantity
+            vat_amount = subtotal * product.vat_rate
+
+            # Calculate delivery fee using selected address
+            from apps.orders.services.order_service import OrderService
+            order_service = OrderService()
+            delivery_fee = order_service._calculate_delivery_fee(
+                subtotal,
+                vendor,
+                delivery_address
+            )
+
+            # Calculate total including delivery fee
+            total = subtotal + vat_amount + delivery_fee
+
+            # Create Stripe payment intent for pre-authorization
+            from apps.integrations.services.stripe_service import StripeConnectService
+            stripe_service = StripeConnectService()
+
+            payment_result = stripe_service.create_payment_intent_for_group(
+                amount=total,
+                group_id=group_id,
+                buyer_id=buyer.id
+            )
+
+            if not payment_result.success:
+                return ServiceResult.fail(
+                    f"Failed to create payment intent: {payment_result.error}",
+                    error_code="PAYMENT_INTENT_FAILED"
+                )
+
+            self.log_info(
+                f"Created payment intent for group {group_id}",
+                group_id=group_id,
+                buyer_id=buyer.id,
+                amount=float(total),
+                intent_id=payment_result.data['intent_id']
+            )
+
+            return ServiceResult.ok({
+                'client_secret': payment_result.data['client_secret'],
+                'intent_id': payment_result.data['intent_id'],
+                'amount': total,
+                'group': group
+            })
+
+        except Exception as e:
+            self.log_error(
+                f"Error creating payment intent",
+                exception=e,
+                group_id=group_id,
+                buyer_id=buyer.id
+            )
+            return ServiceResult.fail(
+                "Failed to create payment intent",
+                error_code="PAYMENT_INTENT_CREATION_FAILED"
+            )
+
     def commit_to_group(
         self,
         group_id: int,
@@ -298,7 +406,8 @@ class GroupBuyingService(BaseService):
         quantity: int,
         buyer_postcode: str,
         delivery_address_id: int,
-        delivery_notes: Optional[str] = None
+        delivery_notes: Optional[str] = None,
+        payment_intent_id: Optional[str] = None
     ) -> ServiceResult:
         """
         Wrapper method for committing to a group buying deal.
@@ -311,6 +420,7 @@ class GroupBuyingService(BaseService):
             buyer_postcode: Buyer's postcode (will be geocoded)
             delivery_address_id: ID of delivery address
             delivery_notes: Optional delivery notes
+            payment_intent_id: Optional pre-confirmed payment intent ID
 
         Returns:
             ServiceResult containing commitment details or error
@@ -370,27 +480,42 @@ class GroupBuyingService(BaseService):
             # Calculate total including delivery fee
             total = subtotal + vat_amount + delivery_fee
 
-            # Create Stripe payment intent for pre-authorization
+            # Handle payment intent
             from apps.integrations.services.stripe_service import StripeConnectService
             stripe_service = StripeConnectService()
 
-            # Create payment intent with complete total
-            payment_result = stripe_service.create_payment_intent_for_group(
-                amount=total,
-                group_id=group_id,
-                buyer_id=buyer.id
-            )
-
-            payment_intent_id = None
-            if payment_result.success:
-                payment_intent_id = payment_result.data['intent_id']
+            # Two-step payment flow support
+            if payment_intent_id:
+                # Payment intent already created and confirmed by frontend
+                # Verify it exists and is in correct state
+                self.log_info(
+                    f"Using pre-confirmed payment intent {payment_intent_id}",
+                    group_id=group_id,
+                    buyer_id=buyer.id,
+                    payment_intent_id=payment_intent_id
+                )
+                # Store the already-confirmed payment_intent_id for commitment
+                final_payment_intent_id = payment_intent_id
+                payment_result = None  # No new payment intent created
             else:
-                # Log warning but don't fail - payment can be collected later
-                self.log_warning(
-                    f"Failed to create payment intent: {payment_result.error}",
+                # Legacy flow: create payment intent now (for backward compatibility)
+                # This creates an unconfirmed intent - frontend should confirm it
+                payment_result = stripe_service.create_payment_intent_for_group(
+                    amount=total,
                     group_id=group_id,
                     buyer_id=buyer.id
                 )
+
+                final_payment_intent_id = None
+                if payment_result.success:
+                    final_payment_intent_id = payment_result.data['intent_id']
+                else:
+                    # Log warning but don't fail - payment can be collected later
+                    self.log_warning(
+                        f"Failed to create payment intent: {payment_result.error}",
+                        group_id=group_id,
+                        buyer_id=buyer.id
+                    )
 
             # Call join_group with all required parameters
             result = self.join_group(
@@ -399,7 +524,7 @@ class GroupBuyingService(BaseService):
                 quantity=quantity,
                 buyer_location=buyer_location,
                 buyer_postcode=buyer_postcode,
-                payment_intent_id=payment_intent_id,
+                payment_intent_id=final_payment_intent_id,
                 delivery_address=delivery_address,
                 delivery_notes=delivery_notes
             )
@@ -407,10 +532,14 @@ class GroupBuyingService(BaseService):
             if result.success:
                 # Add payment intent to response
                 response_data = result.data.copy()
-                response_data['payment_intent'] = {
-                    'client_secret': payment_result.data.get('client_secret') if payment_result.success else None,
-                    'intent_id': payment_intent_id
-                }
+
+                # Only include payment_intent if we created one (legacy flow)
+                if payment_result:
+                    response_data['payment_intent'] = {
+                        'client_secret': payment_result.data.get('client_secret') if payment_result.success else None,
+                        'intent_id': final_payment_intent_id
+                    }
+
                 response_data['progress_percent'] = response_data['group'].progress_percent
 
                 return ServiceResult.ok(response_data)
@@ -585,6 +714,21 @@ class GroupBuyingService(BaseService):
                         error_code="OUT_OF_RADIUS"
                     )
 
+                # Validate and reserve stock
+                # Deduct stock immediately to prevent overselling (pessimistic locking)
+                product = group.product
+
+                if product.stock_quantity < quantity:
+                    return ServiceResult.fail(
+                        f"Insufficient stock. Product has {product.stock_quantity} units available, you requested {quantity} units",
+                        error_code="INSUFFICIENT_STOCK"
+                    )
+
+                # Reserve stock by deducting it now
+                Product.objects.filter(id=product.id).update(
+                    stock_quantity=F('stock_quantity') - quantity
+                )
+
                 # Create commitment
                 commitment = GroupCommitment.objects.create(
                     group=group,
@@ -651,9 +795,19 @@ class GroupBuyingService(BaseService):
                     quantity=quantity
                 )
 
-                # Check if target reached
-                if old_quantity < group.target_quantity and group.current_quantity >= group.target_quantity:
-                    # Target reached! Process immediately
+            # Check if target reached (outside transaction to prevent lock timeout)
+            # Use atomic update to prevent race condition - only one thread will succeed
+            if old_quantity < group.target_quantity and group.current_quantity >= group.target_quantity:
+                # Atomically try to change status from 'open' to 'active'
+                # Only one concurrent request will succeed in this update
+                updated_count = BuyingGroup.objects.filter(
+                    id=group.id,
+                    status='open'
+                ).update(status='active')
+
+                # Only process if we were the one to successfully change the status
+                if updated_count > 0:
+                    group.refresh_from_db()
                     self._handle_target_reached(group)
 
                     broadcaster.broadcast_threshold_reached(
@@ -663,11 +817,11 @@ class GroupBuyingService(BaseService):
                         target_quantity=group.target_quantity
                     )
 
-                return ServiceResult.ok({
-                    'commitment': commitment,
-                    'group': group,
-                    'target_reached': group.current_quantity >= group.target_quantity
-                })
+            return ServiceResult.ok({
+                'commitment': commitment,
+                'group': group,
+                'target_reached': group.current_quantity >= group.target_quantity
+            })
 
         except BuyingGroup.DoesNotExist:
             return ServiceResult.fail(
@@ -734,6 +888,11 @@ class GroupBuyingService(BaseService):
                     stripe_service.cancel_payment_intent(
                         commitment.stripe_payment_intent_id
                     )
+
+                # Return reserved stock to inventory
+                Product.objects.filter(id=group.product.id).update(
+                    stock_quantity=F('stock_quantity') + commitment.quantity
+                )
 
                 # Update commitment
                 commitment.status = 'cancelled'
@@ -885,9 +1044,7 @@ class GroupBuyingService(BaseService):
             quantity=group.current_quantity
         )
 
-        # IMMEDIATELY process when target reached
-        group.status = 'active'
-        group.save(update_fields=['status'])
+        # Status is already 'active' from atomic update in join_group
 
         # Create orders immediately
         self._process_successful_group(group)
@@ -1105,6 +1262,9 @@ class GroupBuyingService(BaseService):
 
         pending_commitments = group.commitments.filter(status='pending')
 
+        # Calculate total stock to return
+        total_stock_to_return = sum(c.quantity for c in pending_commitments)
+
         for commitment in pending_commitments:
             # Cancel Stripe payment intent if exists
             # More robust check: ensure it's not empty string or None
@@ -1132,6 +1292,12 @@ class GroupBuyingService(BaseService):
             # Update commitment status regardless of payment cancellation result
             commitment.status = 'cancelled'
             commitment.save(update_fields=['status'])
+
+        # Return all reserved stock to inventory
+        if total_stock_to_return > 0:
+            Product.objects.filter(id=group.product.id).update(
+                stock_quantity=F('stock_quantity') + total_stock_to_return
+            )
 
         self.log_info(
             f"Processed failed group {group.id}",
