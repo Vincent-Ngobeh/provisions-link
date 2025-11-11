@@ -270,10 +270,16 @@ class ProductViewSet(viewsets.ModelViewSet):
                     'error': 'Authentication required for vendor-specific queries'
                 }, status=status.HTTP_401_UNAUTHORIZED)
 
-            # Check if user is the vendor or staff
-            if not (hasattr(request.user, 'vendor') and request.user.vendor.id == int(vendor_id)) and not request.user.is_staff:
+            # Check if user has a vendor account
+            if not hasattr(request.user, 'vendor'):
                 return Response({
-                    'error': 'Permission denied'
+                    'error': 'You must have a vendor account to access vendor-specific stock data'
+                }, status=status.HTTP_403_FORBIDDEN)
+
+            # Check if user is the vendor owner or staff
+            if request.user.vendor.id != int(vendor_id) and not request.user.is_staff:
+                return Response({
+                    'error': 'You can only view stock data for your own vendor account'
                 }, status=status.HTTP_403_FORBIDDEN)
 
         result = self.service.get_low_stock_products(

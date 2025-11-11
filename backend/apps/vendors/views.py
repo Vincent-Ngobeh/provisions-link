@@ -59,8 +59,8 @@ class VendorViewSet(viewsets.ModelViewSet):
         """
         Optionally filter vendors by location or other criteria.
         """
-        # For approve action, allow access to unapproved vendors
-        if self.action == 'approve':
+        # For specific vendor actions (dashboard, onboarding), allow owner/staff access to unapproved vendors
+        if self.action in ['approve', 'dashboard', 'generate_onboarding_link']:
             queryset = Vendor.objects.all()
         else:
             queryset = Vendor.objects.filter(is_approved=True)
