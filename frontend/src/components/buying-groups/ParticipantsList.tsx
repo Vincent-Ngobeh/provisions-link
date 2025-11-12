@@ -126,7 +126,7 @@ export function ParticipantsList({
             </div>
 
             {showTrend && countChange > 0 && (
-              <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
+              <Badge className="bg-green-600 text-white hover:bg-green-700">
                 <TrendingUp className="h-3 w-3 mr-1" />
                 +{countChange}
               </Badge>

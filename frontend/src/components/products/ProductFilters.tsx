@@ -120,8 +120,13 @@ export function ProductFilters({ filters, onChange, onClose }: ProductFiltersPro
             <Badge variant="secondary" className="text-xs">{activeFiltersCount}</Badge>
           )}
           {onClose && (
-            <Button variant="ghost" size="sm" onClick={onClose}>
-              <X className="h-4 w-4" />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onClose}
+              className="h-8 w-8 p-0 bg-red-100 hover:bg-red-200 rounded-sm"
+            >
+              <X className="h-4 w-4 text-red-600" />
             </Button>
           )}
         </div>

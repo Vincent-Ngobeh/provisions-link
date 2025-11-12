@@ -66,4 +66,34 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  /* Mobile font size adjustments */
+  @media (max-width: 768px) {
+    html {
+      font-size: 14px;
+    }
+
+    h1 {
+      @apply text-2xl;
+    }
+
+    h2 {
+      @apply text-xl;
+    }
+
+    h3 {
+      @apply text-lg;
+    }
+
+    p,
+    span,
+    div {
+      @apply text-sm;
+    }
+
+    /* Make buttons slightly smaller on mobile */
+    button {
+      @apply text-sm;
+    }
+  }
 }

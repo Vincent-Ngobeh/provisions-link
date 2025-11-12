@@ -3,6 +3,7 @@ Stripe Connect integration service for marketplace payments.
 Handles vendor onboarding, payment processing, and automated commission splits.
 """
 import stripe
+import re
 from typing import Optional, Dict, Any, List
 from decimal import Decimal
 from datetime import datetime, timedelta
@@ -51,9 +52,13 @@ class StripeConnectService(BaseService):
         if not account_id:
             return False
 
-        # Mock accounts from seed data follow pattern: acct_test_vendorname_###
+        # Mock accounts follow pattern: acct_test_*
         # Real test accounts from Stripe start with: acct_XXXXXXXXXXXX (random characters)
-        # Check if it contains common seed data patterns
+        # If it starts with acct_test_, it's our mock account
+        if account_id.startswith('acct_test_'):
+            return True
+
+        # Also check for common seed data patterns for backward compatibility
         mock_patterns = ['_borough_', '_smithfield_', '_spitalfields_', '_covent_',
                          '_shoreditch_', '_hackney_', '_greenwich_', '_brixton_']
 
@@ -76,6 +81,40 @@ class StripeConnectService(BaseService):
                     "Vendor already has a Stripe account",
                     error_code="ACCOUNT_EXISTS"
                 )
+
+            # Check if we're in test mode (using test API keys or no API key set)
+            is_test_mode = (
+                not stripe.api_key or  # No API key configured
+                stripe.api_key.startswith('sk_test_') or  # Test API key
+                stripe.api_key == ''  # Empty API key
+            )
+
+            # In test mode, create a mock account instead of calling Stripe API
+            if is_test_mode:
+                # Sanitize business name to remove special characters
+                sanitized_name = re.sub(
+                    r'[^a-z0-9_]', '_', vendor.business_name.lower())
+                mock_account_id = f"acct_test_{sanitized_name}_{vendor.id}"
+
+                # Save the mock account ID
+                vendor.stripe_account_id = mock_account_id
+                vendor.stripe_onboarding_complete = True
+                vendor.save(update_fields=[
+                            'stripe_account_id', 'stripe_onboarding_complete'])
+
+                self.log_info(
+                    f"Created MOCK Stripe account for vendor {vendor.id} (test mode)",
+                    vendor_id=vendor.id,
+                    account_id=mock_account_id
+                )
+
+                return ServiceResult.ok({
+                    'account_id': mock_account_id,
+                    'onboarding_url': f"{settings.FRONTEND_URL}/vendor/dashboard",
+                    'mock_account': True,  # Frontend checks for this field
+                    'test_mode': True,
+                    'message': 'Test mode: Mock Stripe account created automatically'
+                })
 
             # Create Express account
             account = stripe.Account.create(
@@ -179,11 +218,17 @@ class StripeConnectService(BaseService):
                 create_result = self.create_vendor_account(vendor)
                 if not create_result.success:
                     return create_result
-                # Return the onboarding URL from create_vendor_account
-                return ServiceResult.ok({
+                # Pass through mock_account flag and message for test mode
+                response_data = {
                     'url': create_result.data['onboarding_url'],
                     'expires_at': None  # Will be set by create flow
-                })
+                }
+                # Add mock_account flag if present
+                if create_result.data.get('mock_account'):
+                    response_data['mock_account'] = True
+                    response_data['message'] = create_result.data.get(
+                        'message')
+                return ServiceResult.ok(response_data)
 
             # Check if this is a mock test account from seed data
             if self._is_mock_test_account(vendor.stripe_account_id):
@@ -237,10 +282,17 @@ class StripeConnectService(BaseService):
                     create_result = self.create_vendor_account(vendor)
                     if not create_result.success:
                         return create_result
-                    return ServiceResult.ok({
+                    # Pass through mock_account flag and message for test mode
+                    response_data = {
                         'url': create_result.data['onboarding_url'],
                         'expires_at': None
-                    })
+                    }
+                    # Add mock_account flag if present
+                    if create_result.data.get('mock_account'):
+                        response_data['mock_account'] = True
+                        response_data['message'] = create_result.data.get(
+                            'message')
+                    return ServiceResult.ok(response_data)
                 else:
                     # Re-raise if it's a different error
                     raise
@@ -841,6 +893,21 @@ class StripeConnectService(BaseService):
                     "Vendor has no Stripe account",
                     error_code="NO_ACCOUNT"
                 )
+
+            # Check if this is a mock test account
+            if self._is_mock_test_account(vendor.stripe_account_id):
+                self.log_info(
+                    f"Mock test account detected for vendor {vendor.id}, returning test balance",
+                    vendor_id=vendor.id,
+                    account_id=vendor.stripe_account_id
+                )
+                # Return mock balance for test accounts
+                return ServiceResult.ok({
+                    'available': 0.00,
+                    'pending': 0.00,
+                    'currency': 'GBP',
+                    'mock_account': True
+                })
 
             # Get balance from connected account
             balance = stripe.Balance.retrieve(

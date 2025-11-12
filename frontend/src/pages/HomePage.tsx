@@ -8,18 +8,18 @@ export function HomePage() {
     <div className="space-y-12">
       {/* Hero Section */}
       <section className="text-center space-y-4 py-12">
-        <h1 className="text-4xl font-bold tracking-tight sm:text-6xl">
+        <h1 className="text-4xl font-bold tracking-tight sm:text-6xl md:text-6xl">
           B2B Food & Beverage Marketplace
         </h1>
-        <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-          Connect with UK suppliers and save up to 15% through group buying
+        <p className="text-xl md:text-xl text-muted-foreground max-w-2xl mx-auto">
+          Connect with UK suppliers and unlock 15%+ discounts through group buying
         </p>
         <div className="flex gap-4 justify-center pt-4">
           <Link to="/products">
-            <Button size="lg">Browse Products</Button>
+            <Button size="lg" className="text-base md:text-base">Browse Products</Button>
           </Link>
           <Link to="/buying-groups">
-            <Button size="lg" variant="outline">View Group Deals</Button>
+            <Button size="lg" variant="outline" className="text-base md:text-base">View Group Deals</Button>
           </Link>
         </div>
       </section>
@@ -57,7 +57,7 @@ export function HomePage() {
             <TrendingDown className="h-10 w-10 mb-2 text-primary" />
             <CardTitle>Save Money</CardTitle>
             <CardDescription>
-              Up to 15% off through group deals
+              15%+ discounts available through group deals
             </CardDescription>
           </CardHeader>
           <CardContent>

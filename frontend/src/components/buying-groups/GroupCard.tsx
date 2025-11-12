@@ -29,21 +29,21 @@ export function GroupCard({
     
     if (group.status === 'open') {
       if (isTargetReached) {
-        return { label: 'Target Reached ✓', className: 'bg-green-100 text-green-800' };
+        return { label: 'Target Reached ✓', className: 'bg-green-600 text-white hover:bg-green-700' };
       } else if (isMinReached) {
-        return { label: 'Active - Min Reached', className: 'bg-blue-100 text-blue-800' };
+        return { label: 'Active - Min Reached', className: 'bg-blue-600 text-white hover:bg-blue-700' };
       } else {
-        return { label: 'Active', className: 'bg-green-100 text-green-800' };
+        return { label: 'Active', className: 'bg-green-600 text-white hover:bg-green-700' };
       }
     }
     
     const statusConfig = {
-      active: { label: 'Finalizing', className: 'bg-purple-100 text-purple-800' },
-      failed: { label: 'Failed', className: 'bg-red-100 text-red-800' },
-      completed: { label: 'Completed', className: 'bg-gray-100 text-gray-800' },
+      active: { label: 'Finalizing', className: 'bg-purple-600 text-white hover:bg-purple-700' },
+      failed: { label: 'Failed', className: 'bg-red-600 text-white hover:bg-red-700' },
+      completed: { label: 'Completed', className: 'bg-gray-600 text-white hover:bg-gray-700' },
     };
     
-    return statusConfig[group.status as keyof typeof statusConfig] || { label: 'Active', className: 'bg-green-100 text-green-800' };
+    return statusConfig[group.status as keyof typeof statusConfig] || { label: 'Active', className: 'bg-green-600 text-white hover:bg-green-700' };
   };
 
   const status = getStatusConfig();
@@ -101,19 +101,21 @@ export function GroupCard({
       </CardContent>
 
       <CardFooter className="pt-3 border-t flex items-center justify-between">
-        <CountdownTimer 
+        <CountdownTimer
           expiresAt={group.expires_at}
           showBadge={true}
         />
-
+        
         <Button 
-          variant="ghost" 
-          size="sm"
-          onClick={() => navigate(`/buying-groups/${group.id}`)}
-          className="group-hover:text-primary"
+          size="sm" 
+          onClick={(e) => {
+            e.stopPropagation();
+            navigate(`/buying-groups/${group.id}`);
+          }}
+          className="group-hover:translate-x-1 transition-transform"
         >
           View Details
-          <ArrowRight className="h-4 w-4 ml-1 group-hover:translate-x-1 transition-transform" />
+          <ArrowRight className="ml-2 h-4 w-4" />
         </Button>
       </CardFooter>
     </Card>
