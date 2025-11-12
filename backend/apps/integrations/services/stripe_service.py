@@ -41,6 +41,24 @@ class StripeConnectService(BaseService):
         self.webhook_secret = settings.STRIPE_WEBHOOK_SECRET
         self.platform_account_id = settings.STRIPE_PLATFORM_ACCOUNT_ID
 
+    def _is_mock_test_account(self, account_id: str) -> bool:
+        """
+        Check if the account ID is a mock/placeholder test account.
+        Mock accounts are from seed data and don't exist in Stripe.
+
+        Returns True if this is a mock account that should skip Stripe API calls.
+        """
+        if not account_id:
+            return False
+
+        # Mock accounts from seed data follow pattern: acct_test_vendorname_###
+        # Real test accounts from Stripe start with: acct_XXXXXXXXXXXX (random characters)
+        # Check if it contains common seed data patterns
+        mock_patterns = ['_borough_', '_smithfield_', '_spitalfields_', '_covent_',
+                         '_shoreditch_', '_hackney_', '_greenwich_', '_brixton_']
+
+        return any(pattern in account_id.lower() for pattern in mock_patterns)
+
     def create_vendor_account(self, vendor: Vendor) -> ServiceResult:
         """
         Create a Stripe Express account for a vendor.
@@ -167,6 +185,26 @@ class StripeConnectService(BaseService):
                     'expires_at': None  # Will be set by create flow
                 })
 
+            # Check if this is a mock test account from seed data
+            if self._is_mock_test_account(vendor.stripe_account_id):
+                self.log_info(
+                    f"Mock test account detected for vendor {vendor.id}, marking onboarding as complete",
+                    vendor_id=vendor.id,
+                    account_id=vendor.stripe_account_id
+                )
+
+                # Mark onboarding as complete for mock accounts
+                vendor.stripe_onboarding_complete = True
+                vendor.save(update_fields=['stripe_onboarding_complete'])
+
+                # Return a mock success response (frontend will handle this)
+                return ServiceResult.ok({
+                    'url': f"{settings.FRONTEND_URL}/vendor/dashboard",
+                    'expires_at': None,
+                    'mock_account': True,
+                    'message': 'Test account onboarding completed automatically'
+                })
+
             # Validate that the Stripe account actually exists
             try:
                 account = stripe.Account.retrieve(vendor.stripe_account_id)
@@ -175,12 +213,19 @@ class StripeConnectService(BaseService):
                     vendor_id=vendor.id,
                     account_id=vendor.stripe_account_id
                 )
-            except stripe.error.InvalidRequestError as e:
+            except (stripe.error.InvalidRequestError, stripe.error.PermissionError) as e:
                 error_str = str(e).lower()
-                # Handle missing account (test/seed data with invalid account IDs)
-                if 'no such account' in error_str or getattr(e, 'code', None) == 'resource_missing':
+                # Handle missing account or permission issues (test/seed data with invalid account IDs)
+                is_missing_account = (
+                    'no such account' in error_str or
+                    getattr(e, 'code', None) == 'resource_missing' or
+                    getattr(e, 'code', None) == 'account_invalid' or
+                    'does not have access to account' in error_str
+                )
+
+                if is_missing_account:
                     self.log_warning(
-                        f"Stripe account does not exist for vendor {vendor.id} (possibly test data)",
+                        f"Stripe account does not exist or is not accessible for vendor {vendor.id} (possibly test data)",
                         vendor_id=vendor.id,
                         old_account_id=vendor.stripe_account_id
                     )
@@ -247,14 +292,38 @@ class StripeConnectService(BaseService):
                     'payouts_enabled': False
                 })
 
+            # Check if this is a mock test account from seed data
+            if self._is_mock_test_account(vendor.stripe_account_id):
+                self.log_info(
+                    f"Mock test account detected for vendor {vendor.id}",
+                    vendor_id=vendor.id,
+                    account_id=vendor.stripe_account_id
+                )
+
+                # Return mock "active" status
+                return ServiceResult.ok({
+                    'status': 'active',
+                    'charges_enabled': True,
+                    'payouts_enabled': True,
+                    'mock_account': True,
+                    'requirements': []
+                })
+
             try:
                 account = stripe.Account.retrieve(vendor.stripe_account_id)
-            except stripe.error.InvalidRequestError as e:
+            except (stripe.error.InvalidRequestError, stripe.error.PermissionError) as e:
                 error_str = str(e).lower()
-                # Handle missing account (test/seed data with invalid account IDs)
-                if 'no such account' in error_str or getattr(e, 'code', None) == 'resource_missing':
+                # Handle missing account or permission issues (test/seed data with invalid account IDs)
+                is_missing_account = (
+                    'no such account' in error_str or
+                    getattr(e, 'code', None) == 'resource_missing' or
+                    getattr(e, 'code', None) == 'account_invalid' or
+                    'does not have access to account' in error_str
+                )
+
+                if is_missing_account:
                     self.log_warning(
-                        f"Stripe account does not exist for vendor {vendor.id} (possibly test data), clearing account ID",
+                        f"Stripe account does not exist or is not accessible for vendor {vendor.id} (possibly test data), clearing account ID",
                         vendor_id=vendor.id,
                         old_account_id=vendor.stripe_account_id
                     )

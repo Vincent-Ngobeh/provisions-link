@@ -347,8 +347,10 @@ export const vendorsApi = {
 
   generateOnboardingLink: async (id: number): Promise<ApiResponse<{
     url: string;
-    account_id: string;
-    expires_at: number;
+    account_id?: string;
+    expires_at?: number;
+    mock_account?: boolean;
+    message?: string;
   }>> => {
     const { data } = await apiClient.post(`/vendors/${id}/generate_onboarding_link/`);
     return { data };

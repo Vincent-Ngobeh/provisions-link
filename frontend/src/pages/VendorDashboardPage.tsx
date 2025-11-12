@@ -67,8 +67,21 @@ export default function VendorDashboardPage() {
     mutationFn: () => vendorsApi.generateOnboardingLink(user!.vendor_id!),
     onSuccess: (response) => {
       const onboardingUrl = response.data.url;
-      
-      // Open Stripe onboarding in new window
+      const isMockAccount = response.data.mock_account;
+
+      // Handle mock test accounts (from seed data)
+      if (isMockAccount) {
+        toast({
+          title: 'Onboarding Complete',
+          description: response.data.message || 'Test account setup completed.',
+        });
+
+        // Refresh dashboard to show updated status
+        queryClient.invalidateQueries({ queryKey: ['vendor-dashboard'] });
+        return;
+      }
+
+      // Open Stripe onboarding in new window for real accounts
       const stripeWindow = window.open(onboardingUrl, '_blank', 'width=800,height=800');
       
       if (!stripeWindow) {

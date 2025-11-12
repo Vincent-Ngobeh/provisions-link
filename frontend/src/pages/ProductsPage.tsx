@@ -18,6 +18,9 @@ export function ProductsPage() {
   const [page, setPage] = useState(1);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
+  // Get vendor filter from URL if present
+  const vendorFromUrl = searchParams.get('vendor');
+
   const [filters, setFilters] = useState<ProductFiltersState>({
     categories: searchParams.get('categories')?.split(',').map(Number).filter(Boolean) || [],
     tags: searchParams.get('tags')?.split(',').map(Number).filter(Boolean) || [],
@@ -41,6 +44,11 @@ export function ProductsPage() {
     };
 
     if (searchQuery) params.search = searchQuery;
+
+    // Vendor filter (for viewing specific vendor's products)
+    if (vendorFromUrl) {
+      params.vendor = vendorFromUrl;
+    }
 
     // Category - use 'category' for both GET and POST
     if (filters.categories.length > 0) {
@@ -76,7 +84,7 @@ export function ProductsPage() {
     }
 
     return params;
-  }, [page, searchQuery, filters]);
+  }, [page, searchQuery, filters, vendorFromUrl]);
 
   // Check if we need advanced search endpoint
   const needsSearchEndpoint =
