@@ -44,27 +44,27 @@ export default function VendorDashboardPage() {
   // Fetch vendor dashboard data
   const { data: dashboardData, isLoading: isLoadingDashboard } = useQuery({
     queryKey: ['vendor-dashboard'],
-    queryFn: () => vendorsApi.dashboard(user!.id),
-    enabled: isVendor,
+    queryFn: () => vendorsApi.dashboard(user!.vendor_id!),
+    enabled: isVendor && !!user?.vendor_id,
   });
 
   // Fetch pending orders (filtered by vendor)
   const { data: ordersData, isLoading: isLoadingOrders } = useQuery({
     queryKey: ['vendor-pending-orders'],
-    queryFn: () => ordersApi.list({ status: 'paid', vendor: user!.id }),
-    enabled: isVendor,
+    queryFn: () => ordersApi.list({ status: 'paid', vendor: user!.vendor_id! }),
+    enabled: isVendor && !!user?.vendor_id,
   });
 
   // Fetch low stock products
   const { data: lowStockData, isLoading: isLoadingStock } = useQuery({
     queryKey: ['vendor-low-stock'],
-    queryFn: () => productsApi.lowStock({ vendor: user!.id }),
-    enabled: isVendor,
+    queryFn: () => productsApi.lowStock({ vendor: user!.vendor_id! }),
+    enabled: isVendor && !!user?.vendor_id,
   });
 
   // Stripe onboarding mutation
   const onboardingMutation = useMutation({
-    mutationFn: () => vendorsApi.generateOnboardingLink(user!.id),
+    mutationFn: () => vendorsApi.generateOnboardingLink(user!.vendor_id!),
     onSuccess: (response) => {
       const onboardingUrl = response.data.url;
       
@@ -219,7 +219,7 @@ export default function VendorDashboardPage() {
               <Button 
                 variant="ghost" 
                 size="sm" 
-                onClick={() => navigate(`/products?vendor=${user!.id}`)}
+                onClick={() => navigate(`/products?vendor=${user!.vendor_id}`)}
               >
                 View All
               </Button>

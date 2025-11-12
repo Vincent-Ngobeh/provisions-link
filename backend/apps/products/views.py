@@ -253,7 +253,7 @@ class ProductViewSet(viewsets.ModelViewSet):
             'error_code': result.error_code
         }, status=status.HTTP_400_BAD_REQUEST)
 
-    @action(detail=False, methods=['get'])
+    @action(detail=False, methods=['get'], url_path='low_stock')
     def low_stock(self, request):
         """
         Get products with low stock.

@@ -45,17 +45,21 @@ class UserPrivateSerializer(serializers.ModelSerializer):
     """Full user info for authenticated user's own profile"""
     addresses = AddressSerializer(many=True, read_only=True)
     has_vendor_account = serializers.SerializerMethodField()
+    vendor_id = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = [
             'id', 'email', 'username', 'first_name', 'last_name',
-            'phone_number', 'date_joined', 'addresses', 'has_vendor_account'
+            'phone_number', 'date_joined', 'addresses', 'has_vendor_account', 'vendor_id'
         ]
         read_only_fields = ['id', 'email', 'date_joined']
 
     def get_has_vendor_account(self, obj):
         return hasattr(obj, 'vendor')
+
+    def get_vendor_id(self, obj):
+        return obj.vendor.id if hasattr(obj, 'vendor') else None
 
 
 class UserRegistrationSerializer(serializers.ModelSerializer):

@@ -138,7 +138,7 @@ class VendorViewSet(viewsets.ModelViewSet):
             'error_code': result.error_code
         }, status=status.HTTP_400_BAD_REQUEST)
 
-    @action(detail=True, methods=['get'], permission_classes=[IsAuthenticated])
+    @action(detail=True, methods=['get'], permission_classes=[IsAuthenticated], url_path='dashboard')
     def dashboard(self, request, pk=None):
         """
         Get vendor dashboard metrics.
@@ -202,7 +202,7 @@ class VendorViewSet(viewsets.ModelViewSet):
             'error_code': result.error_code
         }, status=status.HTTP_400_BAD_REQUEST)
 
-    @action(detail=True, methods=['post'])
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated], url_path='generate_onboarding_link')
     def generate_onboarding_link(self, request, pk=None):
         """
         Generate Stripe Connect onboarding link.

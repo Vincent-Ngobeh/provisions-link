@@ -21,6 +21,7 @@ export interface User {
   phone_number: string;
   date_joined: string;
   has_vendor_account: boolean;
+  vendor_id?: number | null; // Vendor ID if user has a vendor account
   is_staff?: boolean; // Django built-in field, may not always be sent
 }
 
