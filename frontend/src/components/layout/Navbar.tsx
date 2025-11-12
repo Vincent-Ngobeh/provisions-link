@@ -65,7 +65,7 @@ export function Navbar() {
                   <>
                     <div className="border-t my-2" />
                     {isVendor && (
-                      <Link to="/vendor/dashboard" onClick={() => setMobileMenuOpen(false)}>
+                      <Link to="/vendors/dashboard" onClick={() => setMobileMenuOpen(false)}>
                         <Button variant="ghost" className="w-full justify-start text-sm h-10">
                           <Package className="mr-2 h-4 w-4" />
                           Vendor Dashboard
@@ -190,7 +190,7 @@ export function Navbar() {
                 </Link>
 
                 {isVendor && (
-                  <Link to="/vendor/dashboard">
+                  <Link to="/vendors/dashboard">
                     <Button variant="outline">
                       <Package className="mr-2 h-4 w-4" />
                       Vendor Dashboard
