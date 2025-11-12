@@ -152,11 +152,53 @@ class StripeConnectService(BaseService):
             ServiceResult containing onboarding URL or error
         """
         try:
+            # If vendor doesn't have a stripe_account_id, create one first
             if not vendor.stripe_account_id:
-                return ServiceResult.fail(
-                    "Vendor does not have a Stripe account",
-                    error_code="NO_ACCOUNT"
+                self.log_info(
+                    f"Vendor {vendor.id} has no Stripe account, creating one",
+                    vendor_id=vendor.id
                 )
+                create_result = self.create_vendor_account(vendor)
+                if not create_result.success:
+                    return create_result
+                # Return the onboarding URL from create_vendor_account
+                return ServiceResult.ok({
+                    'url': create_result.data['onboarding_url'],
+                    'expires_at': None  # Will be set by create flow
+                })
+
+            # Validate that the Stripe account actually exists
+            try:
+                account = stripe.Account.retrieve(vendor.stripe_account_id)
+                self.log_info(
+                    f"Verified Stripe account exists for vendor {vendor.id}",
+                    vendor_id=vendor.id,
+                    account_id=vendor.stripe_account_id
+                )
+            except stripe.error.InvalidRequestError as e:
+                error_str = str(e).lower()
+                # Handle missing account (test/seed data with invalid account IDs)
+                if 'no such account' in error_str or getattr(e, 'code', None) == 'resource_missing':
+                    self.log_warning(
+                        f"Stripe account does not exist for vendor {vendor.id} (possibly test data)",
+                        vendor_id=vendor.id,
+                        old_account_id=vendor.stripe_account_id
+                    )
+                    # Clear the invalid account ID and create a new one
+                    vendor.stripe_account_id = None
+                    vendor.save(update_fields=['stripe_account_id'])
+
+                    # Create a new account
+                    create_result = self.create_vendor_account(vendor)
+                    if not create_result.success:
+                        return create_result
+                    return ServiceResult.ok({
+                        'url': create_result.data['onboarding_url'],
+                        'expires_at': None
+                    })
+                else:
+                    # Re-raise if it's a different error
+                    raise
 
             # Create account link
             account_link = stripe.AccountLink.create(
@@ -205,7 +247,32 @@ class StripeConnectService(BaseService):
                     'payouts_enabled': False
                 })
 
-            account = stripe.Account.retrieve(vendor.stripe_account_id)
+            try:
+                account = stripe.Account.retrieve(vendor.stripe_account_id)
+            except stripe.error.InvalidRequestError as e:
+                error_str = str(e).lower()
+                # Handle missing account (test/seed data with invalid account IDs)
+                if 'no such account' in error_str or getattr(e, 'code', None) == 'resource_missing':
+                    self.log_warning(
+                        f"Stripe account does not exist for vendor {vendor.id} (possibly test data), clearing account ID",
+                        vendor_id=vendor.id,
+                        old_account_id=vendor.stripe_account_id
+                    )
+                    # Clear the invalid account ID
+                    vendor.stripe_account_id = None
+                    vendor.stripe_onboarding_complete = False
+                    vendor.save(update_fields=[
+                                'stripe_account_id', 'stripe_onboarding_complete'])
+
+                    return ServiceResult.ok({
+                        'status': 'not_created',
+                        'charges_enabled': False,
+                        'payouts_enabled': False,
+                        'message': 'Invalid Stripe account cleared, please create a new account'
+                    })
+                else:
+                    # Re-raise if it's a different error
+                    raise
 
             # Update vendor status if changed
             if account.charges_enabled != vendor.stripe_onboarding_complete:

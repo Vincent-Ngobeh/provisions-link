@@ -85,15 +85,29 @@ class ProductViewSet(viewsets.ModelViewSet):
             )
         )
 
+        # Check if this is a vendor viewing their own products
+        is_own_vendor_products = False
+        vendor_id = self.request.query_params.get('vendor')
+
+        if self.request.user.is_authenticated and hasattr(self.request.user, 'vendor'):
+            # If vendor_id is specified and matches the authenticated vendor
+            if vendor_id and int(vendor_id) == self.request.user.vendor.id:
+                is_own_vendor_products = True
+            # If no vendor_id specified but in actions that typically show vendor's own products
+            elif self.action in ['update', 'partial_update', 'destroy', 'list'] and not vendor_id:
+                # Don't apply the filter yet, will be handled below
+                pass
+
         # CRITICAL: Only show products from vendors ready to fulfill orders
-        # Staff can see everything for admin purposes
-        if not (self.request.user.is_authenticated and self.request.user.is_staff):
-            queryset = queryset.filter(
-                vendor__is_approved=True,  # Admin approved
-                vendor__stripe_onboarding_complete=True  # Can receive payments
-                # NOTE: We don't filter by FSA rating - any rating is legal
-                # A 3★ vendor can still operate and is shown for transparency
-            )
+        # Exceptions: Staff can see everything, and vendors can see their own products
+        if not self.request.user.is_authenticated or not self.request.user.is_staff:
+            if not is_own_vendor_products:
+                queryset = queryset.filter(
+                    vendor__is_approved=True,  # Admin approved
+                    vendor__stripe_onboarding_complete=True  # Can receive payments
+                    # NOTE: We don't filter by FSA rating - any rating is legal
+                    # A 3★ vendor can still operate and is shown for transparency
+                )
 
         # For update/delete actions, filter by vendor ownership
         if self.action in ['update', 'partial_update', 'destroy']:
@@ -109,7 +123,6 @@ class ProductViewSet(viewsets.ModelViewSet):
                 queryset = queryset.none()
 
         # Filter by vendor if specified
-        vendor_id = self.request.query_params.get('vendor')
         if vendor_id:
             queryset = queryset.filter(vendor_id=vendor_id)
 
