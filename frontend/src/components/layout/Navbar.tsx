@@ -157,25 +157,27 @@ export function Navbar() {
         </div>
 
         {/* Desktop Layout */}
-        <div className="hidden md:flex items-center justify-between">
-          <div className="flex items-center gap-8">
-            <Link to="/" className="text-2xl font-bold">
-              Provisions Link
-            </Link>
+        <div className="hidden md:flex items-center justify-between relative">
+          {/* Left: Logo */}
+          <Link to="/" className="flex items-center gap-2">
+            <img src="/logo.svg" alt="Provisions Link" className="h-10 w-10" />
+            <span className="text-2xl font-bold">Provisions Link</span>
+          </Link>
 
-            <div className="flex items-center gap-4">
-              <Link to="/products">
-                <Button variant="ghost">Products</Button>
-              </Link>
-              <Link to="/buying-groups">
-                <Button variant="ghost">Group Buying</Button>
-              </Link>
-              <Link to="/vendors">
-                <Button variant="ghost">Vendors</Button>
-              </Link>
-            </div>
+          {/* Center: Navigation Links */}
+          <div className="absolute left-1/2 transform -translate-x-1/2 flex items-center gap-4">
+            <Link to="/products">
+              <Button variant="ghost">Products</Button>
+            </Link>
+            <Link to="/buying-groups">
+              <Button variant="ghost">Group Buying</Button>
+            </Link>
+            <Link to="/vendors">
+              <Button variant="ghost">Vendors</Button>
+            </Link>
           </div>
 
+          {/* Right: User Actions */}
           <div className="flex items-center gap-4">
             {isAuthenticated ? (
               <>

@@ -2,7 +2,7 @@
 // Private dashboard for vendor's own account
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { vendorsApi, ordersApi, productsApi } from '@/api/endpoints';
 import { VendorStats } from '@/components/vendors/VendorStats';
@@ -189,9 +189,11 @@ export default function VendorDashboardPage() {
               <Button 
                 variant="ghost" 
                 size="sm" 
-                onClick={() => navigate('/orders?vendor=true')}
+                asChild
               >
-                View All
+                <Link to="/orders?vendor=true">
+                  View All
+                </Link>
               </Button>
             </div>
           </CardHeader>
@@ -232,9 +234,11 @@ export default function VendorDashboardPage() {
               <Button 
                 variant="ghost" 
                 size="sm" 
-                onClick={() => navigate(`/products?vendor=${user!.vendor_id}`)}
+                asChild
               >
-                View All
+                <Link to={`/products?vendor=${user!.vendor_id}`}>
+                  View All
+                </Link>
               </Button>
             </div>
           </CardHeader>

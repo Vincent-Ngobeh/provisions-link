@@ -1,7 +1,7 @@
 // frontend/src/pages/BuyingGroupDetailPage.tsx
 // Detail page with real-time WebSocket updates
 
-import { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { buyingGroupsApi } from '@/api/endpoints';
@@ -53,7 +53,6 @@ export default function BuyingGroupDetailPage() {
   
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
-  const [userCommitment, setUserCommitment] = useState<any>(null);
   const [realtimeData, setRealtimeData] = useState<any>(null);
 
   // Fetch group details
@@ -65,6 +64,25 @@ export default function BuyingGroupDetailPage() {
 
   const group = groupData?.data;
 
+  // Fetch user's commitments using React Query
+  const { data: commitmentsData } = useQuery({
+    queryKey: ['my-commitments'],
+    queryFn: () => buyingGroupsApi.myCommitments(),
+    enabled: !!user,
+  });
+
+  // Derive userCommitment from the commitments query
+  const userCommitment = React.useMemo(() => {
+    if (!commitmentsData || !group) return null;
+
+    const allCommitments = [
+      ...commitmentsData.data.active,
+      ...commitmentsData.data.confirmed,
+    ];
+
+    return allCommitments.find((c: any) => c.group === group.id) || null;
+  }, [commitmentsData, group?.id]);
+
   // Cancel commitment mutation
   const cancelCommitmentMutation = useMutation({
     mutationFn: () => buyingGroupsApi.cancelCommitment(parseInt(id!)),
@@ -74,9 +92,9 @@ export default function BuyingGroupDetailPage() {
         description: 'Your commitment has been cancelled successfully.',
       });
       
-      // Refresh group data
+      // Refresh both group data and commitments
       queryClient.invalidateQueries({ queryKey: ['buying-group', id] });
-      setUserCommitment(null);
+      queryClient.invalidateQueries({ queryKey: ['my-commitments'] });
     },
     onError: (error: any) => {
       toast({
@@ -137,35 +155,6 @@ export default function BuyingGroupDetailPage() {
       });
     },
   });
-
-  // Check if user has a commitment to this group
-  useEffect(() => {
-    if (!group || !user) {
-      setUserCommitment(null);
-      return;
-    }
-    // Fetch user's commitments and find one for this group
-    const checkCommitment = async () => {
-      try {
-        const response = await buyingGroupsApi.myCommitments();
-        const allCommitments = [
-          ...response.data.active,
-          ...response.data.confirmed,
-        ];
-        
-        // Find commitment for this specific group
-        const commitment = allCommitments.find(
-          (c: any) => c.group === group.id
-        );
-        
-        setUserCommitment(commitment || null);
-      } catch (error) {
-        console.error('Error fetching commitments:', error);
-        setUserCommitment(null);
-      }
-    };
-    checkCommitment();
-  }, [group, user]); // Re-check when group or user changes
 
   // Use realtime data if available, otherwise use group data
   const currentQuantity = realtimeData?.current_quantity ?? group?.current_quantity ?? 0;
@@ -529,11 +518,8 @@ export default function BuyingGroupDetailPage() {
           open={showJoinModal}
           onOpenChange={setShowJoinModal}
           onSuccess={(commitment: GroupCommitment) => {
-            setUserCommitment(commitment);
-            toast({
-              title: 'Success!',
-              description: 'You have joined the buying group.',
-            });
+            // The my-commitments query is invalidated by the commit mutation,
+            // which will automatically trigger a refetch and update userCommitment
           }}
         />
       )}
