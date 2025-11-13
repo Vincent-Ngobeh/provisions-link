@@ -120,11 +120,17 @@ class VendorViewSet(viewsets.ModelViewSet):
             delivery_radius_km=serializer.validated_data['delivery_radius_km'],
             min_order_value=serializer.validated_data['min_order_value'],
             phone_number=serializer.validated_data.get('phone_number'),
-            vat_number=serializer.validated_data.get('vat_number'),
-            logo_url=serializer.validated_data.get('logo_url')
+            vat_number=serializer.validated_data.get('vat_number')
         )
 
         if result.success:
+            # Handle logo upload if provided
+            logo = serializer.validated_data.get('logo')
+            if logo:
+                vendor = result.data['vendor']
+                vendor.logo = logo
+                vendor.save(update_fields=['logo'])
+
             vendor_data = VendorDetailSerializer(result.data['vendor']).data
             return Response({
                 'vendor': vendor_data,
