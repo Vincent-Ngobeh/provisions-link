@@ -342,14 +342,15 @@ class OrderService(BaseService):
                     stripe_payment_intent_id=commitment.stripe_payment_intent_id
                 )
 
-                # Create order item
+                # Create order item with commitment link
                 OrderItem.objects.create(
                     order=order,
                     product=product,
                     quantity=quantity,
                     unit_price=discounted_price,
                     total_price=subtotal,
-                    discount_amount=discount_amount
+                    discount_amount=discount_amount,
+                    group_commitment=commitment
                 )
 
                 # Stock was already deducted during commitment creation
@@ -363,18 +364,33 @@ class OrderService(BaseService):
                 commitment.order = order
                 commitment.save(update_fields=['status', 'order'])
 
-                # Capture payment
-                from apps.integrations.services.stripe_service import StripeConnectService
-                stripe_service = StripeConnectService()
+                # Capture payment if payment intent exists
+                if commitment.stripe_payment_intent_id:
+                    from apps.integrations.services.stripe_service import StripeConnectService
+                    stripe_service = StripeConnectService()
 
-                capture_result = stripe_service.capture_group_payment(
-                    commitment.stripe_payment_intent_id
-                )
+                    capture_result = stripe_service.capture_group_payment(
+                        commitment.stripe_payment_intent_id
+                    )
 
-                if capture_result.success:
-                    order.status = 'paid'
-                    order.paid_at = timezone.now()
-                    order.save(update_fields=['status', 'paid_at'])
+                    if capture_result.success:
+                        order.status = 'paid'
+                        order.paid_at = timezone.now()
+                        order.save(update_fields=['status', 'paid_at'])
+                    else:
+                        self.log_warning(
+                            f"Failed to capture payment for commitment {commitment_id}",
+                            error=capture_result.error,
+                            commitment_id=commitment_id
+                        )
+                else:
+                    # No payment intent - this is a test/seed commitment
+                    # Order remains in 'pending' status
+                    self.log_warning(
+                        f"No payment intent for commitment {commitment_id} - order created in pending status",
+                        commitment_id=commitment_id,
+                        order_id=order.id
+                    )
 
                 self.log_info(
                     f"Created order from group commitment",

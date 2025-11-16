@@ -106,8 +106,8 @@ class Order(models.Model):
     stripe_payment_intent_id = models.CharField(
         max_length=200,
         blank=True,
-        null=True,  # ADD: Allow NULL in database
-        default=None,  # ADD: Use NULL as default
+        null=True,
+        default=None,
         help_text="Stripe payment intent ID"
     )
 
@@ -183,6 +183,14 @@ class OrderItem(models.Model):
         on_delete=models.PROTECT,
         related_name='order_items'
     )
+    group_commitment = models.ForeignKey(
+        'buying_groups.GroupCommitment',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='order_items',
+        help_text="Group commitment that created this order item (if applicable)"
+    )
     quantity = models.IntegerField(
         validators=[MinValueValidator(1)]
     )
@@ -212,6 +220,7 @@ class OrderItem(models.Model):
         verbose_name_plural = _('Order Items')
         indexes = [
             models.Index(fields=['order', 'product']),
+            models.Index(fields=['group_commitment']),
         ]
 
     def __str__(self):
