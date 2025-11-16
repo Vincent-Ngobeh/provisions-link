@@ -104,10 +104,11 @@ class Command(BaseCommand):
 
             if commitment.delivery_address:
                 addr = commitment.delivery_address
-                self.stdout.write(f"    Delivery Address Object: {addr.name} - {addr.postcode}")
+                self.stdout.write(f"    Delivery Address Object: {addr.address_name} - {addr.postcode}")
                 self.stdout.write(f"      → Address ID: {addr.id}")
                 self.stdout.write(f"      → User: {addr.user.username} (ID: {addr.user.id})")
-                self.stdout.write(f"      → Name: {addr.name}")
+                self.stdout.write(f"      → Address Name: {addr.address_name}")
+                self.stdout.write(f"      → Recipient: {addr.recipient_name}")
                 self.stdout.write(f"      → City: {addr.city}")
                 self.stdout.write(f"      → Postcode: {addr.postcode}")
                 self.stdout.write(f"      → Default: {addr.is_default}")
@@ -227,11 +228,12 @@ class Command(BaseCommand):
 
                 if test_commitment.delivery_address:
                     addr = test_commitment.delivery_address
-                    self.stdout.write(f"   Delivery Address: {addr.name} - {addr.postcode}")
+                    self.stdout.write(f"   Delivery Address: {addr.address_name} - {addr.postcode}")
                     self.stdout.write(f"   Address Details:")
                     self.stdout.write(f"      ID: {addr.id}")
                     self.stdout.write(f"      User: {addr.user.username}")
-                    self.stdout.write(f"      Name: {addr.name}")
+                    self.stdout.write(f"      Address Name: {addr.address_name}")
+                    self.stdout.write(f"      Recipient: {addr.recipient_name}")
                     self.stdout.write(f"      Full: {addr.city}, {addr.postcode}\n")
 
                 if test_commitment.status == 'cancelled':
@@ -247,14 +249,29 @@ class Command(BaseCommand):
         self.stdout.write(f"   Restoring expires_at to: {original_expires_at}")
         self.stdout.write(f"   Restoring status to: {original_status}")
 
-        # Reset commitments if they were cancelled
-        cancelled_commitments = GroupCommitment.objects.filter(
+        # Reset commitments if they were cancelled or confirmed
+        cancelled_or_confirmed = GroupCommitment.objects.filter(
             group=group,
-            status='cancelled'
+            status__in=['cancelled', 'confirmed']
         )
-        if cancelled_commitments.exists():
-            cancelled_commitments.update(status='pending')
-            self.stdout.write(f"   Reset {cancelled_commitments.count()} commitments to pending")
+        if cancelled_or_confirmed.exists():
+            cancelled_or_confirmed.update(status='pending', order=None)
+            self.stdout.write(f"   Reset {cancelled_or_confirmed.count()} commitments to pending")
+
+        # Delete any orders that were created during the test
+        orders_to_delete = Order.objects.filter(group=group)
+        if orders_to_delete.exists():
+            order_count = orders_to_delete.count()
+            # Return stock before deleting orders
+            for order in orders_to_delete:
+                for item in order.items.all():
+                    from django.db.models import F
+                    from apps.products.models import Product
+                    Product.objects.filter(id=item.product.id).update(
+                        stock_quantity=F('stock_quantity') + item.quantity
+                    )
+            orders_to_delete.delete()
+            self.stdout.write(f"   Deleted {order_count} test orders and restored stock")
 
         # Verify restoration
         group.refresh_from_db()
