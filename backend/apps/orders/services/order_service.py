@@ -411,11 +411,22 @@ class OrderService(BaseService):
         from apps.core.utils.websocket_utils import broadcaster  # Import at top of file
 
         try:
+            self.log_info(
+                f"Starting order creation for successful group {group_id}",
+                group_id=group_id
+            )
+
             # Get the group
             try:
                 group = BuyingGroup.objects.select_related(
                     'product__vendor'
                 ).get(id=group_id)
+                self.log_info(
+                    f"Found group {group_id}",
+                    group_id=group_id,
+                    product=group.product.name,
+                    vendor=group.product.vendor.business_name
+                )
             except BuyingGroup.DoesNotExist:
                 return ServiceResult.fail(
                     f"Group {group_id} not found",
@@ -423,6 +434,11 @@ class OrderService(BaseService):
                 )
 
             # Validate group status
+            self.log_info(
+                f"Validating group status",
+                group_id=group_id,
+                current_status=group.status
+            )
             if group.status not in ['active', 'completed']:
                 return ServiceResult.fail(
                     f"Group status must be active or completed, got {group.status}",
@@ -430,10 +446,21 @@ class OrderService(BaseService):
                 )
 
             # Get all pending commitments
+            self.log_info(
+                f"Fetching pending commitments",
+                group_id=group_id
+            )
             commitments = GroupCommitment.objects.filter(
                 group=group,
                 status='pending'
             ).select_related('buyer')
+
+            commitment_count = commitments.count()
+            self.log_info(
+                f"Found {commitment_count} pending commitments",
+                group_id=group_id,
+                count=commitment_count
+            )
 
             if not commitments.exists():
                 return ServiceResult.ok({
@@ -447,20 +474,45 @@ class OrderService(BaseService):
             orders_failed = []
             total_revenue = Decimal('0.00')
 
+            self.log_info(
+                f"Starting to process {commitments.count()} commitments",
+                group_id=group_id
+            )
+
             # Process each commitment
             for i, commitment in enumerate(commitments, 1):
                 try:
-                    # Broadcast progress for each order being created
-                    broadcaster.broadcast_progress(
+                    self.log_info(
+                        f"Processing commitment {i}/{commitments.count()}",
                         group_id=group_id,
-                        current_quantity=group.current_quantity,
-                        target_quantity=group.target_quantity,
-                        participants_count=commitments.count(),
-                        progress_percent=100.0,  # Group is complete
-                        time_remaining_seconds=0
+                        commitment_id=commitment.id,
+                        buyer_id=commitment.buyer.id
                     )
 
+                    # Broadcast progress for each order being created
+                    try:
+                        broadcaster.broadcast_progress(
+                            group_id=group_id,
+                            current_quantity=group.current_quantity,
+                            target_quantity=group.target_quantity,
+                            participants_count=commitments.count(),
+                            progress_percent=100.0,  # Group is complete
+                            time_remaining_seconds=0
+                        )
+                    except Exception as broadcast_error:
+                        # Log broadcaster errors but don't fail order creation
+                        self.log_warning(
+                            f"Failed to broadcast progress",
+                            group_id=group_id,
+                            error=str(broadcast_error)
+                        )
+
                     # Create order from commitment
+                    self.log_info(
+                        f"Creating order from commitment",
+                        group_id=group_id,
+                        commitment_id=commitment.id
+                    )
                     result = self.create_order_from_group(
                         group_id=group_id,
                         commitment_id=commitment.id
@@ -559,9 +611,17 @@ class OrderService(BaseService):
                 exception=e,
                 group_id=group_id
             )
+            # Add detailed exception info for debugging
+            import traceback
+            error_details = {
+                'exception_type': type(e).__name__,
+                'exception_message': str(e),
+                'traceback': traceback.format_exc()
+            }
             return ServiceResult.fail(
-                "Failed to process group orders",
-                error_code="PROCESSING_FAILED"
+                f"Failed to process group orders: {type(e).__name__}: {str(e)}",
+                error_code="PROCESSING_FAILED",
+                metadata=error_details
             )
 
     def update_order_status(

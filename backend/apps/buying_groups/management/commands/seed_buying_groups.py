@@ -233,6 +233,7 @@ class Command(BaseCommand):
                     quantity=commit_quantity,
                     buyer_location=buyer_address.location,
                     buyer_postcode=buyer_address.postcode,
+                    delivery_address=buyer_address,  # Fix: Add delivery address
                     status='pending',
                     # Add realistic test payment intent ID
                     # Format: pi_test_seed_{group_id}_{buyer_id}_{timestamp}

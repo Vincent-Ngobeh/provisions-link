@@ -1167,6 +1167,8 @@ class GroupBuyingService(BaseService):
                     if group.current_quantity >= group.min_quantity:
                         # Group reached minimum but not target - process now
                         group.status = 'active'
+                        # CRITICAL: Save status before processing
+                        group.save(update_fields=['status'])
                         self._process_successful_group(group)
                         stats['successful'] += 1
 
