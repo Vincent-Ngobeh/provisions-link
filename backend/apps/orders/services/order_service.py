@@ -349,7 +349,8 @@ class OrderService(BaseService):
                     quantity=quantity,
                     unit_price=discounted_price,
                     total_price=subtotal,
-                    discount_amount=discount_amount
+                    discount_amount=discount_amount,
+                    group_commitment=commitment
                 )
 
                 # Stock was already deducted during commitment creation

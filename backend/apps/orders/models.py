@@ -183,6 +183,14 @@ class OrderItem(models.Model):
         on_delete=models.PROTECT,
         related_name='order_items'
     )
+    group_commitment = models.ForeignKey(
+        'buying_groups.GroupCommitment',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='order_items',
+        help_text="Group commitment that created this order item (if applicable)"
+    )
     quantity = models.IntegerField(
         validators=[MinValueValidator(1)]
     )
@@ -212,6 +220,7 @@ class OrderItem(models.Model):
         verbose_name_plural = _('Order Items')
         indexes = [
             models.Index(fields=['order', 'product']),
+            models.Index(fields=['group_commitment']),
         ]
 
     def __str__(self):
