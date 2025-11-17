@@ -404,7 +404,7 @@ export default function BuyingGroupDetailPage() {
 
                 <div className="flex justify-between items-center pt-2 border-t">
                   <span className="font-medium">Savings</span>
-                  <Badge className="bg-green-100 text-green-800">
+                  <Badge className="bg-green-100 text-green-800 hover:bg-green-100 hover:text-green-800">
                     £{savingsPerUnit.toFixed(2)} per unit ({group.discount_percent}%)
                   </Badge>
                 </div>
