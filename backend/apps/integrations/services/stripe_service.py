@@ -445,9 +445,10 @@ class StripeConnectService(BaseService):
                     error_code="VENDOR_NOT_READY"
                 )
 
-            # Calculate amounts (in pence)
+            # IMPORTANT: Commission is calculated on subtotal only (not VAT/delivery)
             total_pence = int(order.total * 100)
-            commission_pence = int(order.total * vendor.commission_rate * 100)
+            commission_pence = int(
+                order.subtotal * vendor.commission_rate * 100)
             vendor_amount_pence = total_pence - commission_pence
 
             # Create payment intent with automatic transfer

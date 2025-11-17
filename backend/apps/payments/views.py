@@ -67,10 +67,10 @@ class CreatePaymentIntentView(views.APIView):
         # Initialize Stripe service
         stripe_service = StripeConnectService()
 
-        # Calculate total amount and commission
+        # IMPORTANT: Commission is calculated on subtotal only (not VAT/delivery)
         total_amount = sum(order.total for order in orders)
         commission_amount = sum(
-            order.total * vendor.commission_rate
+            order.subtotal * vendor.commission_rate
             for order in orders
         )
         vendor_amount = total_amount - commission_amount
@@ -124,11 +124,13 @@ class CreatePaymentIntentView(views.APIView):
             payment_intent = stripe.PaymentIntent.create(
                 **payment_intent_params)
 
-            # Update orders with payment intent ID
+            # IMPORTANT: marketplace_fee and vendor_payout are already set correctly by OrderService
+            # We only update the payment_intent_id here to avoid overwriting correct values
             with transaction.atomic():
                 for order in orders:
                     order.stripe_payment_intent_id = payment_intent.id
-                    order.marketplace_fee = order.total * vendor.commission_rate
+                    # Calculate marketplace fee on subtotal only (not VAT/delivery)
+                    order.marketplace_fee = order.subtotal * vendor.commission_rate
                     order.vendor_payout = order.total - order.marketplace_fee
                     order.save(update_fields=[
                         'stripe_payment_intent_id',
