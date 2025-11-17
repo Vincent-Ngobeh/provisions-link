@@ -2,13 +2,30 @@
 Production settings - used for deployment.
 """
 import dj_database_url
+import logging
 from .base import *
+
+logger = logging.getLogger(__name__)
 
 # Security
 DEBUG = False
 
-# Get allowed hosts from environment variable
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '').split(',')
+# Parse ALLOWED_HOSTS from environment variable
+# Format: comma-separated list of allowed hosts (e.g., "example.com,www.example.com,api.example.com")
+_allowed_hosts = os.environ.get('ALLOWED_HOSTS', '')
+if _allowed_hosts and _allowed_hosts.strip():
+    # Split by comma and remove any whitespace/empty strings
+    ALLOWED_HOSTS = [host.strip()
+                     for host in _allowed_hosts.split(',') if host.strip()]
+else:
+    # SECURITY: If not set, use empty list (blocks all requests - safe default)
+    # Set ALLOWED_HOSTS environment variable in production!
+    ALLOWED_HOSTS = []
+    logger.warning(
+        "ALLOWED_HOSTS environment variable not set! "
+        "All HTTP requests will be blocked. "
+        "Set ALLOWED_HOSTS to a comma-separated list of allowed domains."
+    )
 
 # Database - use DATABASE_URL from environment
 DATABASES = {
@@ -45,8 +62,24 @@ CHANNEL_LAYERS = {
     },
 }
 
-# CORS settings for production
-CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',')
+# Parse CORS_ALLOWED_ORIGINS from environment variable
+# Format: comma-separated list of allowed origins (e.g., "https://app.example.com,https://www.example.com")
+_cors_origins = os.environ.get('CORS_ALLOWED_ORIGINS', '')
+if _cors_origins and _cors_origins.strip():
+    # Split by comma and remove any whitespace/empty strings
+    CORS_ALLOWED_ORIGINS = [origin.strip()
+                            for origin in _cors_origins.split(',') if origin.strip()]
+else:
+    # SECURITY: If not set, use empty list (blocks all origins - safe default)
+    # Set CORS_ALLOWED_ORIGINS environment variable in production!
+    CORS_ALLOWED_ORIGINS = []
+    # Log warning in production if CORS origins not configured
+    logger.warning(
+        "CORS_ALLOWED_ORIGINS environment variable not set! "
+        "All cross-origin requests will be blocked. "
+        "Set CORS_ALLOWED_ORIGINS to a comma-separated list of allowed origins."
+    )
+
 CORS_ALLOW_CREDENTIALS = True
 
 # AWS S3 Configuration for Production
