@@ -63,6 +63,7 @@ class OrderDetailSerializer(serializers.ModelSerializer):
     vendor = VendorListSerializer(read_only=True)
     delivery_address = AddressSerializer(read_only=True)
     items = OrderItemSerializer(many=True, read_only=True)
+    group_details = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -71,7 +72,7 @@ class OrderDetailSerializer(serializers.ModelSerializer):
             'delivery_address', 'items', 'subtotal', 'vat_amount',
             'delivery_fee', 'total', 'marketplace_fee', 'vendor_payout',
             'status', 'delivery_notes', 'created_at', 'paid_at',
-            'delivered_at', 'group'
+            'delivered_at', 'group', 'group_details'
         ]
 
     def get_buyer(self, obj):
@@ -82,6 +83,22 @@ class OrderDetailSerializer(serializers.ModelSerializer):
             'username': obj.buyer.username,
             'first_name': obj.buyer.first_name,
             'last_name': obj.buyer.last_name,
+        }
+
+    def get_group_details(self, obj):
+        """Return buying group details if order came from a group"""
+        if not obj.group:
+            return None
+
+        group = obj.group
+        return {
+            'id': group.id,
+            'discount_percent': str(group.discount_percent),
+            'product_name': group.product.name,
+            'status': group.status,
+            'area_name': group.area_name,
+            'target_quantity': group.target_quantity,
+            'current_quantity': group.current_quantity,
         }
 
 
