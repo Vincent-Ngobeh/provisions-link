@@ -770,9 +770,6 @@ class OrderService(BaseService):
                 amount=float(order.total)
             )
 
-            # TODO: Send order confirmation email
-            # TODO: Notify vendor of new order
-
             return ServiceResult.ok({
                 'order_id': order.id,
                 'reference': order.reference_number,

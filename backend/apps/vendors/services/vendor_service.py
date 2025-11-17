@@ -334,8 +334,6 @@ class VendorService(BaseService):
                 commission_rate=float(vendor.commission_rate)
             )
 
-            # TODO: Send approval email notification
-
             return ServiceResult.ok({
                 'vendor': vendor,
                 'message': 'Vendor approved successfully'

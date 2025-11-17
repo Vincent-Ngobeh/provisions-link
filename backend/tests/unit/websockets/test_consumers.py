@@ -13,6 +13,7 @@ from channels.layers import get_channel_layer
 from channels.db import database_sync_to_async
 from django.contrib.auth import get_user_model
 from django.utils import timezone
+from rest_framework_simplejwt.tokens import AccessToken
 
 from apps.buying_groups.consumers import GroupBuyingConsumer
 from apps.buying_groups.models import BuyingGroup, GroupCommitment, GroupUpdate
@@ -23,37 +24,36 @@ from tests.conftest import BuyingGroupFactory, UserFactory, ProductFactory, Cate
 User = get_user_model()
 
 
-@pytest.mark.django_db
+def get_jwt_token(user):
+    """Helper to generate JWT token for testing."""
+    token = AccessToken.for_user(user)
+    return str(token)
+
+
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 class TestGroupBuyingConsumerConnection:
     """Test WebSocket connection handling."""
 
-    async def test_anonymous_user_can_connect(self):
-        """Test that anonymous users can connect to view updates."""
+    async def test_anonymous_user_cannot_connect(self):
+        """Test that anonymous users cannot connect without token."""
         communicator = WebsocketCommunicator(
             GroupBuyingConsumer.as_asgi(),
             "/ws/group-buying/"
         )
 
         connected, _ = await communicator.connect()
-        assert connected is True
-
-        # Should receive connection confirmation
-        response = await communicator.receive_json_from()
-        assert response['type'] == 'connection_established'
-        assert response['data']['authenticated'] is False
-
-        await communicator.disconnect()
+        # Connection should be rejected without token
+        assert connected is False
 
     async def test_authenticated_user_can_connect(self, test_user):
-        """Test that authenticated users can connect."""
+        """Test that authenticated users can connect with valid JWT token."""
+        token = get_jwt_token(test_user)
+
         communicator = WebsocketCommunicator(
             GroupBuyingConsumer.as_asgi(),
-            "/ws/group-buying/"
+            f"/ws/group-buying/?token={token}"
         )
-
-        # Set user in scope
-        communicator.scope['user'] = test_user
 
         connected, _ = await communicator.connect()
         assert connected is True
@@ -62,23 +62,23 @@ class TestGroupBuyingConsumerConnection:
         response = await communicator.receive_json_from()
         assert response['type'] == 'connection_established'
         assert response['data']['authenticated'] is True
+        assert response['data']['user_id'] == test_user.id
 
         await communicator.disconnect()
 
     async def test_connection_with_invalid_path(self):
-        """Test that connection to invalid path fails."""
+        """Test that connection without token fails."""
         communicator = WebsocketCommunicator(
             GroupBuyingConsumer.as_asgi(),
             "/ws/invalid-path/"
         )
 
         connected, _ = await communicator.connect()
-        # Should still connect but to the base consumer
-        assert connected is True
-        await communicator.disconnect()
+        # Should not connect without token
+        assert connected is False
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 class TestGroupSubscription:
     """Test group subscription functionality."""
@@ -130,11 +130,11 @@ class TestGroupSubscription:
         group = await create_test_data()
 
         # Now test the WebSocket
+        token = get_jwt_token(test_user)
         communicator = WebsocketCommunicator(
             GroupBuyingConsumer.as_asgi(),
-            "/ws/group-buying/"
+            f"/ws/group-buying/?token={token}"
         )
-        communicator.scope['user'] = test_user
 
         await communicator.connect()
         await communicator.receive_json_from()  # Consume connection message
@@ -159,11 +159,11 @@ class TestGroupSubscription:
 
     async def test_subscribe_to_invalid_group(self, test_user):
         """Test subscribing to non-existent group returns error."""
+        token = get_jwt_token(test_user)
         communicator = WebsocketCommunicator(
             GroupBuyingConsumer.as_asgi(),
-            "/ws/group-buying/"
+            f"/ws/group-buying/?token={token}"
         )
-        communicator.scope['user'] = test_user
 
         await communicator.connect()
         await communicator.receive_json_from()  # Consume connection message
@@ -225,11 +225,11 @@ class TestGroupSubscription:
 
         group = await create_test_group()
 
+        token = get_jwt_token(test_user)
         communicator = WebsocketCommunicator(
             GroupBuyingConsumer.as_asgi(),
-            "/ws/group-buying/"
+            f"/ws/group-buying/?token={token}"
         )
-        communicator.scope['user'] = test_user
 
         await communicator.connect()
         await communicator.receive_json_from()  # Connection message
@@ -304,11 +304,11 @@ class TestBroadcastMessages:
 
         group = await create_test_group()
 
+        token = get_jwt_token(test_user)
         communicator = WebsocketCommunicator(
             GroupBuyingConsumer.as_asgi(),
-            "/ws/group-buying/"
+            f"/ws/group-buying/?token={token}"
         )
-        communicator.scope['user'] = test_user
 
         await communicator.connect()
         await communicator.receive_json_from()  # Connection message
@@ -388,11 +388,11 @@ class TestBroadcastMessages:
 
         group = await create_test_group()
 
+        token = get_jwt_token(test_user)
         communicator = WebsocketCommunicator(
             GroupBuyingConsumer.as_asgi(),
-            "/ws/group-buying/"
+            f"/ws/group-buying/?token={token}"
         )
-        communicator.scope['user'] = test_user
 
         await communicator.connect()
         await communicator.receive_json_from()
@@ -474,11 +474,11 @@ class TestBroadcastMessages:
         # Connect multiple clients
         communicators = []
         for user in users:
+            token = get_jwt_token(user)
             comm = WebsocketCommunicator(
                 GroupBuyingConsumer.as_asgi(),
-                "/ws/group-buying/"
+                f"/ws/group-buying/?token={token}"
             )
-            comm.scope['user'] = user
             await comm.connect()
             await comm.receive_json_from()  # Connection message
 
@@ -521,11 +521,11 @@ class TestBroadcastMessages:
 
     async def test_ping_pong_keepalive(self, test_user):
         """Test ping/pong keepalive mechanism."""
+        token = get_jwt_token(test_user)
         communicator = WebsocketCommunicator(
             GroupBuyingConsumer.as_asgi(),
-            "/ws/group-buying/"
+            f"/ws/group-buying/?token={token}"
         )
-        communicator.scope['user'] = test_user
 
         await communicator.connect()
         await communicator.receive_json_from()
@@ -543,11 +543,11 @@ class TestBroadcastMessages:
 
     async def test_invalid_message_type(self, test_user):
         """Test handling of invalid message types."""
+        token = get_jwt_token(test_user)
         communicator = WebsocketCommunicator(
             GroupBuyingConsumer.as_asgi(),
-            "/ws/group-buying/"
+            f"/ws/group-buying/?token={token}"
         )
-        communicator.scope['user'] = test_user
 
         await communicator.connect()
         await communicator.receive_json_from()
@@ -572,11 +572,11 @@ class TestErrorHandling:
 
     async def test_subscribe_without_group_id(self, test_user):
         """Test subscribing without providing group_id."""
+        token = get_jwt_token(test_user)
         communicator = WebsocketCommunicator(
             GroupBuyingConsumer.as_asgi(),
-            "/ws/group-buying/"
+            f"/ws/group-buying/?token={token}"
         )
-        communicator.scope['user'] = test_user
 
         await communicator.connect()
         await communicator.receive_json_from()
@@ -594,11 +594,11 @@ class TestErrorHandling:
 
     async def test_malformed_json_message(self, test_user):
         """Test handling of malformed JSON messages."""
+        token = get_jwt_token(test_user)
         communicator = WebsocketCommunicator(
             GroupBuyingConsumer.as_asgi(),
-            "/ws/group-buying/"
+            f"/ws/group-buying/?token={token}"
         )
-        communicator.scope['user'] = test_user
 
         await communicator.connect()
         await communicator.receive_json_from()
@@ -621,11 +621,11 @@ class TestErrorHandling:
 
     async def test_reconnection_after_disconnect(self, test_user):
         """Test that client can reconnect after disconnection."""
+        token = get_jwt_token(test_user)
         communicator1 = WebsocketCommunicator(
             GroupBuyingConsumer.as_asgi(),
-            "/ws/group-buying/"
+            f"/ws/group-buying/?token={token}"
         )
-        communicator1.scope['user'] = test_user
 
         # First connection
         await communicator1.connect()
@@ -636,9 +636,8 @@ class TestErrorHandling:
         # Second connection should work
         communicator2 = WebsocketCommunicator(
             GroupBuyingConsumer.as_asgi(),
-            "/ws/group-buying/"
+            f"/ws/group-buying/?token={token}"
         )
-        communicator2.scope['user'] = test_user
 
         await communicator2.connect()
         response = await communicator2.receive_json_from()

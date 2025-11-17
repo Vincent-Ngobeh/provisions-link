@@ -174,4 +174,5 @@ class TestProductSearchSerializer:
         serializer = ProductSearchSerializer(data=data)
 
         assert not serializer.is_valid()
-        assert 'allergen_free' in serializer.errors
+        assert 'non_field_errors' in serializer.errors
+        assert 'invalid_allergen' in str(serializer.errors).lower()
