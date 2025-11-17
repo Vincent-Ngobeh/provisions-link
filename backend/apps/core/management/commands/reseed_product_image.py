@@ -1,5 +1,6 @@
 # backend/apps/core/management/commands/reseed_product_image.py
 
+import os
 import requests
 from io import BytesIO
 from django.core.management.base import BaseCommand
@@ -31,6 +32,23 @@ class Command(BaseCommand):
         self.stdout.write('\n' + '='*70)
         self.stdout.write(self.style.WARNING('RESEED SINGLE PRODUCT IMAGE'))
         self.stdout.write('='*70 + '\n')
+
+        # Get Unsplash API key from environment
+        self.unsplash_access_key = os.getenv('UNSPLASH_ACCESS_KEY', 'demo')
+
+        if self.unsplash_access_key == 'demo':
+            self.stdout.write(
+                self.style.WARNING(
+                    'ℹ️  Using Unsplash public demo access (may be unreliable)\n'
+                    '   For better reliability, set UNSPLASH_ACCESS_KEY in .env\n'
+                )
+            )
+        else:
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f'✅ Using Unsplash API key: {self.unsplash_access_key[:10]}...\n'
+                )
+            )
 
         # Find the product
         try:
@@ -104,11 +122,42 @@ class Command(BaseCommand):
         Returns SimpleUploadedFile or None if failed.
         """
         try:
-            # Use source.unsplash.com (no API key needed)
-            url = f'https://source.unsplash.com/800x600/?{search_query.replace(" ", ",")}'
+            # Use official Unsplash API if access key is available
+            if self.unsplash_access_key == 'demo':
+                # Use source.unsplash.com for demo (no API key needed, but less reliable)
+                url = f'https://source.unsplash.com/800x600/?{search_query.replace(" ", ",")}'
 
-            self.stdout.write(f'Fetching: {url}')
-            response = requests.get(url, timeout=10, allow_redirects=True)
+                self.stdout.write(f'Fetching from demo endpoint: {url}')
+                response = requests.get(url, timeout=10, allow_redirects=True)
+            else:
+                # Use official API with access key (more reliable)
+                api_url = 'https://api.unsplash.com/photos/random'
+                params = {
+                    'query': search_query,
+                    'orientation': 'landscape',
+                    'client_id': self.unsplash_access_key
+                }
+
+                self.stdout.write(f'Fetching from official API: {api_url}')
+                self.stdout.write(f'Search query: "{search_query}"')
+                response = requests.get(api_url, params=params, timeout=10)
+
+                self.stdout.write(
+                    f'API response status code: {response.status_code}')
+
+                if response.status_code != 200:
+                    self.stdout.write(
+                        self.style.ERROR(
+                            f'❌ API request failed with status {response.status_code}')
+                    )
+                    self.stdout.write(f'Response: {response.text[:500]}')
+                    return None
+
+                data = response.json()
+                image_url = data['urls']['regular']  # 1080px wide
+
+                self.stdout.write(f'Downloading image from: {image_url}')
+                response = requests.get(image_url, timeout=10)
 
             self.stdout.write(f'Response status code: {response.status_code}')
             self.stdout.write(
