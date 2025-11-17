@@ -40,6 +40,9 @@ import {
   AlertCircle,
   XCircle,
   AlertTriangle,
+  Users,
+  TrendingDown,
+  ExternalLink,
 } from 'lucide-react';
 
 export default function OrderDetailPage() {
@@ -240,6 +243,60 @@ export default function OrderDetailPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* Group Buy Information */}
+          {order.group_details && (
+            <Card className="bg-gradient-to-r from-green-50 to-emerald-50 border-green-200">
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <Users className="h-5 w-5 text-green-600" />
+                  <CardTitle className="text-green-900">Group Buy Order</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-start gap-2">
+                  <div className="flex-1">
+                    <p className="text-sm text-green-800 mb-3">
+                      This order was created from a successful buying group! You joined with other buyers to unlock a special discount.
+                    </p>
+
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <p className="text-muted-foreground">Group Discount</p>
+                        <p className="font-semibold text-green-700 flex items-center gap-1">
+                          <TrendingDown className="h-4 w-4" />
+                          {order.group_details.discount_percent}% off
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Area</p>
+                        <p className="font-semibold text-green-900">{order.group_details.area_name}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Product</p>
+                        <p className="font-semibold text-green-900">{order.group_details.product_name}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Group Progress</p>
+                        <p className="font-semibold text-green-900">
+                          {order.group_details.current_quantity}/{order.group_details.target_quantity} units
+                        </p>
+                      </div>
+                    </div>
+
+                    <Button
+                      variant="outline"
+                      className="mt-4 w-full border-green-600 text-green-700 hover:bg-green-100"
+                      onClick={() => navigate(`/buying-groups/${order.group_details!.id}`)}
+                    >
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      View Buying Group Details
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Order Timeline */}
           <Card>

@@ -5,6 +5,7 @@ import { OrderStatusBadge } from './OrderStatusBadge';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Package, Calendar, Store, ArrowRight, Users } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 interface OrderCardProps {
   order: Order;
@@ -22,12 +23,19 @@ export function OrderCard({ order, onClick }: OrderCardProps) {
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-1 flex-wrap">
               <h3 className="font-semibold text-lg">{order.reference_number}</h3>
-              {/* ADDED: Group Buy Badge */}
+              {/* ADDED: Group Buy Badge - Clickable to navigate to buying group */}
               {isGroupBuyOrder && (
-                <Badge className="bg-green-100 text-green-800 border-green-300 hover:bg-green-200">
-                  <Users className="h-3 w-3 mr-1" />
-                  Group Buy
-                </Badge>
+                <Link
+                  to={`/buying-groups/${order.group}`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="inline-block"
+                  title="View buying group details"
+                >
+                  <Badge className="bg-green-100 text-green-800 border-green-300 hover:bg-green-200 cursor-pointer transition-colors">
+                    <Users className="h-3 w-3 mr-1" />
+                    Group Buy
+                  </Badge>
+                </Link>
               )}
             </div>
             <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">

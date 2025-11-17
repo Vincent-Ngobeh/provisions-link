@@ -18,7 +18,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { Users, CheckCircle, XCircle, Clock, Loader2, ExternalLink } from 'lucide-react';
+import { Users, CheckCircle, XCircle, Clock, Loader2, ExternalLink, ShoppingBag, Sparkles } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 
@@ -106,9 +106,24 @@ function CommitmentCard({ commitment }: { commitment: any }) {
   const queryClient = useQueryClient();
 
   const statusConfig = {
-    pending: { icon: Clock, color: 'text-yellow-600', bg: 'bg-yellow-100' },
-    confirmed: { icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-100' },
-    cancelled: { icon: XCircle, color: 'text-red-600', bg: 'bg-red-100' },
+    pending: {
+      icon: Clock,
+      color: 'text-yellow-600',
+      bg: 'bg-yellow-100',
+      badgeClass: 'bg-yellow-100 text-yellow-800 border-yellow-300'
+    },
+    confirmed: {
+      icon: CheckCircle,
+      color: 'text-green-600',
+      bg: 'bg-green-100',
+      badgeClass: 'bg-green-100 text-green-800 border-green-300'
+    },
+    cancelled: {
+      icon: XCircle,
+      color: 'text-red-600',
+      bg: 'bg-red-100',
+      badgeClass: 'bg-red-100 text-red-800 border-red-300'
+    },
   };
 
   const status = statusConfig[commitment.status as keyof typeof statusConfig];
@@ -142,7 +157,7 @@ function CommitmentCard({ commitment }: { commitment: any }) {
   });
 
   return (
-    <Card>
+    <Card className={commitment.status === 'confirmed' && commitment.order ? 'border-green-200 bg-green-50/30' : ''}>
       <CardHeader>
         <div className="flex items-start justify-between">
           <div className="flex-1">
@@ -155,11 +170,17 @@ function CommitmentCard({ commitment }: { commitment: any }) {
                 <ExternalLink className="h-4 w-4" />
               </Link>
             </CardTitle>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <StatusIcon className={`h-4 w-4 ${status.color}`} />
-              <Badge className={status.bg}>
+              <Badge className={status.badgeClass}>
                 {commitment.status.toUpperCase()}
               </Badge>
+              {commitment.status === 'confirmed' && commitment.order && (
+                <Badge className="bg-green-600 text-white flex items-center gap-1">
+                  <Sparkles className="h-3 w-3" />
+                  Order Created
+                </Badge>
+              )}
             </div>
           </div>
         </div>
@@ -233,10 +254,10 @@ function CommitmentCard({ commitment }: { commitment: any }) {
 
           {/* View Order button for confirmed commitments */}
           {commitment.status === 'confirmed' && commitment.order && (
-            <Button asChild variant="default" size="sm" className="flex-1">
+            <Button asChild size="sm" className="flex-1 bg-green-600 hover:bg-green-700">
               <Link to={`/orders/${commitment.order}`}>
-                <ExternalLink className="h-4 w-4 mr-2" />
-                View Order
+                <ShoppingBag className="h-4 w-4 mr-2" />
+                View Your Order
               </Link>
             </Button>
           )}
