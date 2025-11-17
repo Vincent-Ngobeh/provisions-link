@@ -61,6 +61,7 @@ services:
   celery_worker:
     build: .
     command: celery -A provisions_link worker -l info
+    user: "1000:1000"
     volumes:
       - .:/app
     depends_on:
@@ -85,6 +86,7 @@ services:
   celery_beat:
     build: .
     command: celery -A provisions_link beat -l info
+    user: "1000:1000"
     volumes:
       - .:/app
     depends_on:
