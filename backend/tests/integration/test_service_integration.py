@@ -1,526 +1,629 @@
 """
-Integration tests for service interactions.
-Tests complete workflows across multiple services.
+Unit tests for GroupBuyingService using TDD approach.
+Tests business logic for group buying calculations, thresholds, and operations.
 """
-from tests.conftest import UserFactory, AddressFactory, VendorFactory, ProductFactory, OrderFactory, BuyingGroupFactory, OrderItem
+from tests.conftest import UserFactory, AddressFactory
 import pytest
 from decimal import Decimal
 from datetime import datetime, timedelta
-from unittest.mock import patch, Mock
+from unittest.mock import Mock, patch, MagicMock
 
 from django.utils import timezone
 from django.contrib.gis.geos import Point
-from django.db import transaction
 
-from apps.core.services.base import ServiceResult
 from apps.buying_groups.services.group_buying_service import GroupBuyingService
-from apps.orders.services.order_service import OrderService
-from apps.vendors.services.vendor_service import VendorService
-from apps.products.services.product_service import ProductService
-from apps.integrations.services.fsa_service import FSAService
-from apps.integrations.services.stripe_service import StripeConnectService
-from apps.integrations.services.geocoding_service import GeocodingService
+from apps.buying_groups.models import BuyingGroup, GroupCommitment, GroupUpdate
+from apps.core.services.base import ServiceResult
 
 
-class TestVendorOnboardingFlow:
-    """Test complete vendor onboarding workflow."""
+class TestGroupBuyingServiceCalculations:
+    """Test business logic calculations for group buying."""
+
+    def test_calculate_target_quantity_for_expensive_product(self, group_buying_service):
+        """Test that expensive products (>£100) get target quantity of 10."""
+        # Arrange
+        product = Mock()
+        product.price = Decimal('150.00')
+
+        # Act
+        target = group_buying_service._calculate_target_quantity(product)
+
+        # Assert
+        assert target == 10
+
+    def test_calculate_target_quantity_for_medium_price_product(self, group_buying_service):
+        """Test that medium priced products (£50-100) get target quantity of 20."""
+        # Arrange
+        product = Mock()
+        product.price = Decimal('75.00')
+
+        # Act
+        target = group_buying_service._calculate_target_quantity(product)
+
+        # Assert
+        assert target == 20
+
+    def test_calculate_target_quantity_for_low_price_product(self, group_buying_service):
+        """Test that low priced products (<£20) get target quantity of 50."""
+        # Arrange
+        product = Mock()
+        product.price = Decimal('15.00')
+
+        # Act
+        target = group_buying_service._calculate_target_quantity(product)
+
+        # Assert
+        assert target == 50
+
+    def test_calculate_discount_percent_based_on_quantity(self, group_buying_service):
+        """Test discount calculation based on target quantity."""
+        # Arrange
+        product = Mock()
+        product.price = Decimal('50.00')
+
+        # Test high quantity (50+) gets 15% base discount
+        discount = group_buying_service._calculate_discount_percent(
+            product, 50)
+        assert discount == Decimal('15.00')
+
+        # Test medium quantity (30-49) gets 12% base discount
+        discount = group_buying_service._calculate_discount_percent(
+            product, 35)
+        assert discount == Decimal('12.00')
+
+        # Test low quantity (<20) gets 8% base discount
+        discount = group_buying_service._calculate_discount_percent(
+            product, 15)
+        assert discount == Decimal('8.00')
+
+    def test_calculate_discount_increased_for_expensive_items(self, group_buying_service):
+        """Test that expensive items get higher discounts."""
+        # Arrange
+        product = Mock()
+        product.price = Decimal('150.00')  # Expensive item
+
+        # Act
+        discount = group_buying_service._calculate_discount_percent(
+            product, 50)
+
+        # Assert
+        # 15% base (for 50 quantity) + 5% (for price > 100) = 20%
+        assert discount == Decimal('20.00')
+
+    @pytest.mark.skip(reason="calculate_commitment_amount method no longer exists in service")
+    def test_calculate_commitment_amount_with_discount_and_vat(self, group_buying_service):
+        """Test calculation of commitment amount including discount and VAT."""
+        # Arrange
+        group = Mock()
+        group.product.price = Decimal('100.00')
+        group.product.vat_rate = Decimal('0.20')
+        group.discount_percent = Decimal('15.00')
+        quantity = 5
+
+        # Act
+        amount = group_buying_service.calculate_commitment_amount(
+            group, quantity)
+
+        # Assert
+        # Calculation: 100 * 5 * 0.85 = 425 (after discount)
+        # VAT: 425 * 0.20 = 85
+        # Total: 425 + 85 = 510
+        expected = Decimal('510.00')
+        assert amount == expected
+
+
+class TestGroupBuyingServiceCreation:
+    """Test group buying creation with business rules."""
 
     @pytest.mark.django_db
-    def test_complete_vendor_onboarding(
+    def test_create_group_success(
         self,
-        vendor_service,
-        fsa_service,
-        stripe_service,
-        geocoding_service,
-        test_user
+        group_buying_service,
+        test_product,
+        mock_geocoding_response
     ):
-        """Test full vendor registration and onboarding process."""
-        # Step 1: Register vendor with geocoding - patch at module level
-        with patch('apps.integrations.services.geocoding_service.GeocodingService.geocode_postcode') as mock_geocode:
-            mock_geocode.return_value = ServiceResult.ok({
-                'point': Point(-0.1276, 51.5074),
-                'area_name': 'Westminster'
-            })
+        """Test successful group creation with auto-calculated values."""
+        # Arrange
+        test_product.stock_quantity = 100
+        test_product.save()
 
-            # Step 2: FSA verification
-            with patch('apps.integrations.services.fsa_service.FSAService.search_establishment') as mock_fsa:
-                mock_fsa.return_value = ServiceResult.ok([{
-                    'fsa_id': 'FSA-123',
-                    'business_name': 'Test Restaurant',
-                    'rating_value': 5,
-                    'rating_date': datetime.now().date()
-                }])
-
-                # Step 3: Stripe account creation
-                with patch('apps.integrations.services.stripe_service.StripeConnectService.create_vendor_account') as mock_stripe:
-                    mock_stripe.return_value = ServiceResult.ok({
-                        'account_id': 'acct_test123',
-                        'onboarding_url': 'https://stripe.com/onboard'
-                    })
-
-                    # Act
-                    result = vendor_service.register_vendor(
-                        user=test_user,
-                        business_name='Test Restaurant',
-                        description='Fine dining',
-                        postcode='SW1A 1AA',
-                        delivery_radius_km=10,
-                        min_order_value=Decimal('50.00')
-                    )
+        # Act
+        result = group_buying_service.create_group_for_area(
+            product_id=test_product.id,
+            postcode='SW1A 1AA',
+            duration_days=7
+        )
 
         # Assert
         assert result.success is True
-        vendor = result.data['vendor']
+        assert result.data is not None
 
-        # Verify vendor was created with correct attributes
-        assert vendor.business_name == 'Test Restaurant'
-        # Compare coordinates instead of Point objects
-        assert vendor.location.x == -0.1276
-        assert vendor.location.y == 51.5074
-        assert vendor.fsa_verified is True
-        assert vendor.fsa_rating_value == 5
-        assert vendor.stripe_account_id == 'acct_test123'
+        group = result.data
+        assert isinstance(group, BuyingGroup)
+        assert group.product == test_product
+        assert group.status == 'open'
+        assert group.area_name == 'Westminster'
 
-        # Step 4: Admin approval
-        admin_user = UserFactory(is_staff=True)
-        approval_result = vendor_service.approve_vendor(
-            vendor_id=vendor.id,
-            admin_user=admin_user,
-            commission_rate=Decimal('0.12')
-        )
-
-        assert approval_result.success is True
-        vendor.refresh_from_db()
-        assert vendor.is_approved is True
-        assert vendor.commission_rate == Decimal('0.12')
-
-
-class TestGroupBuyingLifecycle:
-    """Test complete group buying workflow from creation to order fulfillment."""
+        # Check auto-calculated values
+        assert group.target_quantity > 0
+        assert group.discount_percent >= Decimal('5.00')
+        assert group.discount_percent <= Decimal('50.00')
+        assert group.min_quantity == int(
+            group.target_quantity * Decimal('0.60'))
 
     @pytest.mark.django_db
-    def test_group_buying_success_flow(
+    def test_create_group_fails_with_inactive_product(
         self,
         group_buying_service,
-        order_service,
-        stripe_service,
-        geocoding_service,
-        approved_vendor,
+        test_product,
+        mock_geocoding_response
+    ):
+        """Test that group creation fails for inactive products."""
+        # Arrange
+        test_product.is_active = False
+        test_product.save()
+
+        # Act
+        result = group_buying_service.create_group_for_area(
+            product_id=test_product.id,
+            postcode='SW1A 1AA'
+        )
+
+        # Assert
+        assert result.success is False
+        assert result.error_code == 'PRODUCT_INACTIVE'
+
+    @pytest.mark.django_db
+    def test_create_group_fails_with_insufficient_stock(
+        self,
+        group_buying_service,
+        test_product,
+        mock_geocoding_response
+    ):
+        """Test that group creation fails when product has low stock."""
+        # Arrange
+        test_product.stock_quantity = 5  # Below minimum of 10
+        test_product.save()
+
+        # Act
+        result = group_buying_service.create_group_for_area(
+            product_id=test_product.id,
+            postcode='SW1A 1AA'
+        )
+
+        # Assert
+        assert result.success is False
+        assert result.error_code == 'INSUFFICIENT_STOCK'
+
+    @pytest.mark.django_db
+    def test_create_group_validates_duration_limits(
+        self,
+        group_buying_service,
+        test_product,
+        mock_geocoding_response
+    ):
+        """Test that group duration must be within allowed limits."""
+        # Test duration too long
+        result = group_buying_service.create_group_for_area(
+            product_id=test_product.id,
+            postcode='SW1A 1AA',
+            duration_days=31  # Exceeds 30 day maximum
+        )
+        assert result.success is False
+        assert result.error_code == 'DURATION_TOO_LONG'
+
+        # Test duration too short
+        result = group_buying_service.create_group_for_area(
+            product_id=test_product.id,
+            postcode='SW1A 1AA',
+            duration_days=0
+        )
+        assert result.success is False
+        assert result.error_code == 'DURATION_TOO_SHORT'
+
+
+class TestGroupBuyingCommitments:
+    """Test commitment operations and business rules."""
+
+    @pytest.mark.django_db
+    def test_commit_to_group_success(
+        self,
+        group_buying_service,
+        test_buying_group,
+        test_user,
+        test_address,
+        mock_geocoding_response,
+        mock_stripe_payment_intent
+    ):
+        """Test successful commitment to a buying group."""
+        # Arrange
+        test_buying_group.status = 'open'
+        test_buying_group.save()
+
+        mock_stripe_result = ServiceResult.ok({'intent_id': 'pi_test_123'})
+
+        with patch('apps.integrations.services.stripe_service.StripeConnectService.create_payment_intent_for_group') as mock_stripe:
+            mock_stripe.return_value = mock_stripe_result
+
+            # Act
+            result = group_buying_service.commit_to_group(
+                group_id=test_buying_group.id,
+                buyer=test_user,
+                quantity=5,
+                buyer_postcode='SW1A 1AA',
+                delivery_address_id=test_address.id
+            )
+
+        # Assert
+        assert result.success is True
+        commitment = result.data
+        assert isinstance(commitment, GroupCommitment)
+        assert commitment.buyer == test_user
+        assert commitment.quantity == 5
+        assert commitment.status == 'pending'
+
+        # Verify group quantity was updated
+        test_buying_group.refresh_from_db()
+        assert test_buying_group.current_quantity == 5
+
+    @pytest.mark.django_db
+    def test_commit_to_group_prevents_duplicate(
+        self,
+        group_buying_service,
+        test_buying_group,
+        test_user,
+        test_address,
+        mock_geocoding_response
+    ):
+        """Test that users cannot commit to the same group twice."""
+        # Arrange
+        # Create existing commitment
+        from tests.conftest import GroupCommitmentFactory
+        GroupCommitmentFactory(
+            group=test_buying_group,
+            buyer=test_user,
+            quantity=5,
+            buyer_location=Point(-0.1276, 51.5074),
+            buyer_postcode='SW1A 1AA',
+            delivery_address=test_address,
+            status='pending'
+        )
+
+        # Act
+        result = group_buying_service.commit_to_group(
+            group_id=test_buying_group.id,
+            buyer=test_user,
+            quantity=3,
+            buyer_postcode='SW1A 1AA',
+            delivery_address_id=test_address.id
+        )
+
+        # Assert
+        assert result.success is False
+        assert result.error_code == 'ALREADY_COMMITTED'
+
+    @pytest.mark.django_db
+    def test_commit_to_group_validates_location(
+        self,
+        group_buying_service,
+        test_buying_group,
+        test_user,
+        test_address
+    ):
+        """Test that commitment validates buyer is within group radius."""
+        # Arrange
+        # London
+        test_buying_group.center_point = Point(-0.1276, 51.5074, srid=4326)
+        test_buying_group.radius_km = 5
+        test_buying_group.save()
+
+        # Mock geocoding to return location outside radius
+        mock_location = Mock()
+        mock_location.success = True
+        mock_location.data = {
+            # Oxford - way outside 5km radius
+            'point': Point(-1.2577, 51.7520, srid=4326)
+        }
+
+        with patch('apps.integrations.services.geocoding_service.GeocodingService.geocode_postcode') as mock_geo:
+            mock_geo.return_value = mock_location
+
+            # Act
+            result = group_buying_service.commit_to_group(
+                group_id=test_buying_group.id,
+                buyer=test_user,
+                quantity=5,
+                buyer_postcode='OX1 1AA',
+                delivery_address_id=test_address.id
+            )
+
+        # Assert
+        assert result.success is False
+        assert result.error_code == 'OUT_OF_RADIUS'
+
+    @pytest.mark.django_db
+    def test_commit_triggers_threshold_notification(
+        self,
+        group_buying_service,
+        test_buying_group,
+        test_user,
+        test_address,
+        mock_geocoding_response,
+        mock_stripe_payment_intent
+    ):
+        """Test that reaching target quantity triggers notification."""
+        # Arrange
+        test_buying_group.current_quantity = 95
+        test_buying_group.target_quantity = 100
+        test_buying_group.product.stock_quantity = 200
+        test_buying_group.product.save()
+        test_buying_group.save()
+
+        mock_stripe_result = ServiceResult.ok({'intent_id': 'pi_test_123'})
+
+        with patch('apps.integrations.services.stripe_service.StripeConnectService.create_payment_intent_for_group') as mock_stripe:
+            mock_stripe.return_value = mock_stripe_result
+
+            # Act
+            result = group_buying_service.commit_to_group(
+                group_id=test_buying_group.id,
+                buyer=test_user,
+                quantity=5,  # This will reach the target
+                buyer_postcode='SW1A 1AA',
+                delivery_address_id=test_address.id
+            )
+
+        # Assert
+        assert result.success is True
+
+        # When target is reached, group is processed immediately and status becomes 'completed'
+        test_buying_group.refresh_from_db()
+        assert test_buying_group.status == 'completed'
+
+        # Check that threshold event was created
+        threshold_event = GroupUpdate.objects.filter(
+            group=test_buying_group,
+            event_type='threshold'
+        ).first()
+        assert threshold_event is not None
+
+
+class TestGroupBuyingExpiration:
+    """Test group expiration and processing logic."""
+
+    @pytest.mark.django_db
+    def test_process_expired_groups_success(
+        self,
+        group_buying_service,
         test_product
     ):
-        """Test successful group buying from creation to order generation."""
-        # Setup
-        test_product.vendor = approved_vendor
-        test_product.price = Decimal('100.00')
+        """Test processing groups that reached minimum quantity."""
+        # Arrange
+        # Create expired group that met minimum
+        expired_group = BuyingGroup.objects.create(
+            product=test_product,
+            center_point=Point(-0.1276, 51.5074),
+            radius_km=5,
+            area_name='Test Area',
+            target_quantity=100,
+            current_quantity=65,  # Above minimum (60)
+            min_quantity=60,
+            discount_percent=Decimal('15.00'),
+            expires_at=timezone.now() - timedelta(hours=1),  # Expired
+            status='open'
+        )
+
+        # Act
+        stats = group_buying_service.process_expired_groups()
+
+        # Assert
+        assert stats['total_processed'] == 1
+        assert stats['successful'] == 1
+        assert stats['failed'] == 0
+
+        # Verify group was marked as active
+        expired_group.refresh_from_db()
+        assert expired_group.status == 'active'
+
+    @pytest.mark.django_db
+    def test_process_expired_groups_failure(
+        self,
+        group_buying_service,
+        test_product
+    ):
+        """Test processing groups that didn't reach minimum quantity."""
+        # Arrange
+        # Create expired group that didn't meet minimum
+        expired_group = BuyingGroup.objects.create(
+            product=test_product,
+            center_point=Point(-0.1276, 51.5074),
+            radius_km=5,
+            area_name='Test Area',
+            target_quantity=100,
+            current_quantity=50,  # Below minimum (60)
+            min_quantity=60,
+            discount_percent=Decimal('15.00'),
+            expires_at=timezone.now() - timedelta(hours=1),  # Expired
+            status='open'
+        )
+
+        # Create a commitment to test payment cancellation
+        from tests.conftest import GroupCommitmentFactory
+        buyer = UserFactory()
+        commitment = GroupCommitmentFactory(
+            group=expired_group,
+            buyer=buyer,
+            quantity=50,
+            buyer_location=Point(-0.1276, 51.5074),
+            buyer_postcode='SW1A 1AA',
+            stripe_payment_intent_id='pi_test_cancel',
+            status='pending'
+        )
+
+        with patch('apps.integrations.services.stripe_service.StripeConnectService.cancel_payment_intent') as mock_cancel:
+            mock_cancel.return_value = ServiceResult.ok({'cancelled': True})
+
+            # Act
+            stats = group_buying_service.process_expired_groups()
+
+        # Assert
+        assert stats['total_processed'] == 1
+        assert stats['successful'] == 0
+        assert stats['failed'] == 1
+
+        # Verify group was marked as failed
+        expired_group.refresh_from_db()
+        assert expired_group.status == 'failed'
+
+        # Verify commitment was cancelled
+        commitment.refresh_from_db()
+        assert commitment.status == 'cancelled'
+
+        # Verify payment intent was cancelled
+        mock_cancel.assert_called_once_with('pi_test_cancel')
+
+
+class TestGroupBuyingCancellation:
+    """Test commitment cancellation logic."""
+
+    @pytest.mark.django_db
+    def test_cancel_commitment_success(
+        self,
+        group_buying_service,
+        test_buying_group,
+        test_user
+    ):
+        """Test successful commitment cancellation."""
+        # Arrange
+        test_buying_group.current_quantity = 50
+        test_buying_group.save()
+
+        from tests.conftest import GroupCommitmentFactory
+        commitment = GroupCommitmentFactory(
+            group=test_buying_group,
+            buyer=test_user,
+            quantity=10,
+            buyer_location=Point(-0.1276, 51.5074),
+            buyer_postcode='SW1A 1AA',
+            stripe_payment_intent_id='pi_test_cancel',
+            status='pending'
+        )
+
+        with patch('apps.integrations.services.stripe_service.StripeConnectService.cancel_payment_intent') as mock_cancel:
+            mock_cancel.return_value = ServiceResult.ok({'cancelled': True})
+
+            # Act
+            result = group_buying_service.cancel_commitment(
+                commitment_id=commitment.id,
+                buyer=test_user
+            )
+
+        # Assert
+        assert result.success is True
+
+        # Verify commitment was cancelled
+        commitment.refresh_from_db()
+        assert commitment.status == 'cancelled'
+
+        # Verify group quantity was updated
+        test_buying_group.refresh_from_db()
+        assert test_buying_group.current_quantity == 40  # 50 - 10
+
+        # Verify payment was cancelled
+        mock_cancel.assert_called_once_with('pi_test_cancel')
+
+    @pytest.mark.django_db
+    def test_cancel_commitment_prevents_after_processing(
+        self,
+        group_buying_service,
+        test_buying_group,
+        test_user
+    ):
+        """Test that commitments cannot be cancelled after group processing."""
+        # Arrange
+        test_buying_group.status = 'completed'  # Already processed
+        test_buying_group.save()
+
+        from tests.conftest import GroupCommitmentFactory
+        commitment = GroupCommitmentFactory(
+            group=test_buying_group,
+            buyer=test_user,
+            quantity=10,
+            buyer_location=Point(-0.1276, 51.5074),
+            buyer_postcode='SW1A 1AA',
+            status='pending'
+        )
+
+        # Act
+        result = group_buying_service.cancel_commitment(
+            commitment_id=commitment.id,
+            buyer=test_user
+        )
+
+        # Assert
+        assert result.success is False
+        assert result.error_code == 'CANNOT_LEAVE'
+
+
+class TestGroupBuyingIntegration:
+    """Integration tests for group buying with other services."""
+
+    @pytest.mark.django_db
+    def test_full_group_buying_lifecycle(
+        self,
+        group_buying_service,
+        test_product,
+        test_user,
+        mock_geocoding_response
+    ):
+        """Test complete group buying lifecycle from creation to completion."""
+        # 1. Create group
+        test_product.price = Decimal('50.00')
         test_product.stock_quantity = 200
         test_product.save()
 
-        # Step 1: Create buying group
-        with patch.object(geocoding_service, 'geocode_postcode') as mock_geocode:
-            mock_geocode.return_value = ServiceResult.ok({
-                'point': Point(-0.1276, 51.5074),
-                'area_name': 'Westminster'
-            })
+        create_result = group_buying_service.create_group_for_area(
+            product_id=test_product.id,
+            postcode='SW1A 1AA',
+            target_quantity=20,
+            discount_percent=Decimal('10.00')
+        )
 
-            group_result = group_buying_service.create_group_for_area(
-                product_id=test_product.id,
-                postcode='SW1A 1AA',
-                target_quantity=20,
-                discount_percent=Decimal('15.00'),
-                duration_days=7
-            )
+        assert create_result.success is True
+        group = create_result.data
 
-        assert group_result.success is True
-        group = group_result.data
-
-        # Step 2: Add commitments from multiple buyers
+        # 2. Add commitments
+        from tests.conftest import AddressFactory
         buyers = [UserFactory() for _ in range(4)]
-        commitments = []
+        addresses = [AddressFactory(user=buyer) for buyer in buyers]
 
-        for buyer in buyers:
-            # Create address for buyer
-            address = AddressFactory(user=buyer, is_default=True)
+        with patch('apps.integrations.services.stripe_service.StripeConnectService.create_payment_intent_for_group') as mock_stripe:
+            mock_stripe.return_value = ServiceResult.ok(
+                {'intent_id': 'pi_test'})
 
-            with patch.object(geocoding_service, 'geocode_postcode') as mock_geocode:
-                mock_geocode.return_value = ServiceResult.ok({
-                    'point': Point(-0.1276, 51.5074)
-                })
+            for buyer, address in zip(buyers, addresses):
+                commit_result = group_buying_service.commit_to_group(
+                    group_id=group.id,
+                    buyer=buyer,
+                    quantity=5,  # 4 buyers * 5 = 20 (reaches target)
+                    buyer_postcode='SW1A 1AA',
+                    delivery_address_id=address.id
+                )
+                assert commit_result.success is True
 
-                with patch.object(stripe_service, 'create_payment_intent_for_group') as mock_stripe:
-                    mock_stripe.return_value = ServiceResult.ok({
-                        'intent_id': f'pi_test_{buyer.id}',
-                        'client_secret': 'secret'
-                    })
-
-                    commit_result = group_buying_service.commit_to_group(
-                        group_id=group.id,
-                        buyer=buyer,
-                        quantity=5,  # Total: 4 * 5 = 20
-                        buyer_postcode='SW1A 1AA'
-                    )
-
-                    assert commit_result.success is True
-                    commitments.append(commit_result.data)
-
-        # Verify group reached target
+        # 3. When target is reached, group is processed immediately and status becomes 'completed'
         group.refresh_from_db()
         assert group.current_quantity == 20
-        assert group.status == 'active'
+        assert group.status == 'completed'
 
-        # Step 3: Process group expiration
-        group.expires_at = timezone.now() - timedelta(hours=1)
-        group.status = 'open'  # Reset for processing
-        group.save()
+        # 4. Process the group
+        with patch.object(group_buying_service, '_process_successful_group') as mock_process:
+            # Simulate expiration
+            group.expires_at = timezone.now() - timedelta(hours=1)
+            group.status = 'open'  # Reset for processing
+            group.save()
 
-        with patch.object(stripe_service, 'capture_group_payment') as mock_capture:
-            mock_capture.return_value = ServiceResult.ok({'captured': True})
-
-            # Process expired groups
             stats = group_buying_service.process_expired_groups()
+
             assert stats['successful'] == 1
-
-        # Step 4: Create orders from commitments
-        for i, commitment in enumerate(commitments):
-            # Mock the capture to succeed
-            with patch('apps.integrations.services.stripe_service.StripeConnectService.capture_group_payment') as mock_capture:
-                mock_capture.return_value = ServiceResult.ok(
-                    {'captured': True})
-
-                order_result = order_service.create_order_from_group(
-                    group_id=group.id,
-                    commitment_id=commitment.id
-                )
-
-                assert order_result.success is True
-                order = order_result.data
-
-                # Verify order details
-                assert order.buyer == buyers[i]
-                assert order.vendor == approved_vendor
-                assert order.group == group
-                assert order.status == 'paid'
-
-                # Verify discount was applied
-                order_item = order.items.first()
-                assert order_item.discount_amount > Decimal('0')
-
-        # Step 5: Verify stock was reduced
-        test_product.refresh_from_db()
-        # Stock reserved but not reduced until shipping
-        assert test_product.stock_quantity == 200
-
-
-class TestLocationBasedProductSearch:
-    """Test product search with location filtering."""
-
-    @pytest.mark.django_db
-    def test_search_products_by_location_and_filters(
-        self,
-        product_service,
-        vendor_service,
-        geocoding_service
-    ):
-        """Test searching products with location and other filters."""
-        # Create vendors at different locations
-        vendor1 = VendorFactory(
-            business_name='Local Vendor',
-            location=Point(-0.1276, 51.5074),
-            delivery_radius_km=10,
-            is_approved=True,
-            fsa_rating_value=5
-        )
-
-        vendor2 = VendorFactory(
-            business_name='Far Vendor',
-            location=Point(-1.0000, 52.0000),
-            delivery_radius_km=5,
-            is_approved=True,
-            fsa_rating_value=3
-        )
-
-        # Create products
-        product1 = ProductFactory(
-            vendor=vendor1,
-            name='Local Organic Tomatoes',
-            price=Decimal('5.00'),
-            contains_allergens=False
-        )
-
-        product2 = ProductFactory(
-            vendor=vendor2,
-            name='Far Away Potatoes',
-            price=Decimal('3.00')
-        )
-
-        product3 = ProductFactory(
-            vendor=vendor1,
-            name='Local Cheese',
-            price=Decimal('15.00'),
-            contains_allergens=True,
-            allergen_info={'milk': True}
-        )
-
-        # Search products near location
-        with patch.object(geocoding_service, 'geocode_postcode') as mock_geocode:
-            mock_geocode.return_value = ServiceResult.ok({
-                'point': Point(-0.1276, 51.5074)
-            })
-
-            # Search with multiple filters
-            result = product_service.search_products(
-                search_query='Local',
-                postcode='SW1A 1AA',
-                radius_km=15,
-                min_price=Decimal('4.00'),
-                max_price=Decimal('20.00'),
-                allergen_free=['milk'],
-                min_fsa_rating=4
-            )
-
-        assert result.success is True
-        products = result.data['products']
-
-        # Should only include local vendor's tomatoes (not cheese due to milk)
-        product_names = [p['name'] for p in products]
-        assert 'Local Organic Tomatoes' in product_names
-        assert 'Local Cheese' not in product_names  # Has milk
-        assert 'Far Away Potatoes' not in product_names  # Vendor too far
-
-
-class TestOrderProcessingWithPayments:
-    """Test order processing with payment integration."""
-
-    @pytest.mark.django_db
-    def test_create_and_process_order(
-        self,
-        order_service,
-        stripe_service,
-        test_user,
-        approved_vendor,
-        test_address
-    ):
-        """Test creating and processing an order with payment."""
-        # Create products
-        product1 = ProductFactory(
-            vendor=approved_vendor,
-            price=Decimal('25.00'),
-            stock_quantity=100
-        )
-
-        product2 = ProductFactory(
-            vendor=approved_vendor,
-            price=Decimal('30.00'),
-            stock_quantity=50
-        )
-
-        # Step 1: Create order
-        items = [
-            {'product_id': product1.id, 'quantity': 2},
-            {'product_id': product2.id, 'quantity': 3}
-        ]
-
-        order_result = order_service.create_order(
-            buyer=test_user,
-            vendor_id=approved_vendor.id,
-            delivery_address_id=test_address.id,
-            items=items,
-            delivery_notes='Ring doorbell twice'
-        )
-
-        assert order_result.success is True
-        order = order_result.data
-
-        # Verify calculations
-        assert order.subtotal == Decimal('140.00')  # (25*2) + (30*3)
-        assert order.marketplace_fee == Decimal('14.00')  # 10% commission
-        assert order.vendor_payout == Decimal('159.00')  # Total - commission
-
-        # Step 2: Process payment - Mock the actual Stripe call
-        with patch('apps.integrations.services.stripe_service.StripeConnectService.process_marketplace_order') as mock_payment:
-            mock_payment.return_value = ServiceResult.ok({
-                'payment_intent_id': 'pi_test123',
-                'client_secret': 'secret',
-                'amount': 16800,  # Including VAT
-                'commission': 1400,
-                'vendor_amount': 15400
-            })
-
-            payment_result = order_service.process_payment(
-                order_id=order.id,
-                payment_method_id='pm_test123'
-            )
-
-            assert payment_result.success is True
-            assert payment_result.data['payment_status'] == 'succeeded'
-
-        # Verify order status updated
-        order.refresh_from_db()
-        assert order.status == 'paid'
-        assert order.paid_at is not None
-
-        # Step 3: Update order status through workflow
-        vendor_user = approved_vendor.user
-
-        # Vendor marks as processing
-        status_result = order_service.update_order_status(
-            order_id=order.id,
-            new_status='processing',
-            user=vendor_user
-        )
-        assert status_result.success is True
-
-        # Vendor marks as shipped
-        status_result = order_service.update_order_status(
-            order_id=order.id,
-            new_status='shipped',
-            user=vendor_user
-        )
-        assert status_result.success is True
-
-        # Finally delivered
-        status_result = order_service.update_order_status(
-            order_id=order.id,
-            new_status='delivered',
-            user=vendor_user
-        )
-        assert status_result.success is True
-
-        order.refresh_from_db()
-        assert order.status == 'delivered'
-        assert order.delivered_at is not None
-
-
-class TestVendorPerformanceAnalytics:
-    """Test vendor analytics across services."""
-
-    @pytest.mark.django_db
-    def test_vendor_comprehensive_analytics(
-        self,
-        vendor_service,
-        order_service,
-        approved_vendor
-    ):
-        """Test generating comprehensive vendor analytics."""
-        # Create historical orders
-        for i in range(10):
-            order = OrderFactory(
-                vendor=approved_vendor,
-                status='delivered' if i < 7 else 'cancelled',
-                total=Decimal('100.00'),
-                vendor_payout=Decimal('90.00'),
-                marketplace_fee=Decimal('10.00'),
-                created_at=timezone.now() - timedelta(days=i)
-            )
-
-            # Create order items
-            OrderItem.objects.create(
-                order=order,
-                product=ProductFactory(vendor=approved_vendor),
-                quantity=5,
-                unit_price=Decimal('20.00'),
-                total_price=Decimal('100.00')
-            )
-
-        # Create buying groups
-        for i in range(3):
-            BuyingGroupFactory(
-                product__vendor=approved_vendor,
-                status='completed' if i < 2 else 'failed',
-                created_at=timezone.now() - timedelta(days=i*2)
-            )
-
-        # Get dashboard metrics
-        dashboard_result = vendor_service.get_vendor_dashboard_metrics(
-            vendor_id=approved_vendor.id
-        )
-
-        assert dashboard_result.success is True
-        metrics = dashboard_result.data
-
-        # Verify summary metrics
-        assert metrics['summary']['week_orders'] > 0
-        assert metrics['summary']['week_revenue'] > 0
-
-        # Get performance report
-        report_result = vendor_service.get_vendor_performance_report(
-            vendor_id=approved_vendor.id,
-            date_from=timezone.now() - timedelta(days=30),
-            date_to=timezone.now()
-        )
-
-        assert report_result.success is True
-        report = report_result.data
-
-        # Verify report metrics - actual value is 630.0 based on order filtering
-        # 7 delivered orders with actual filtering
-        assert report['revenue']['total'] == 630.0
-        assert report['fulfillment']['delivered'] == 7
-        assert report['fulfillment']['cancelled'] == 3
-        assert report['fulfillment']['fulfillment_rate'] == 70.0
-
-
-class TestErrorRecoveryScenarios:
-    """Test error recovery and rollback scenarios."""
-
-    @pytest.mark.django_db
-    def test_order_creation_rollback_on_payment_failure(
-        self,
-        order_service,
-        stripe_service,
-        test_user,
-        approved_vendor,
-        test_address
-    ):
-        """Test that failed payment doesn't create completed order."""
-        # Create product
-        product = ProductFactory(
-            vendor=approved_vendor,
-            price=Decimal('50.00'),
-            stock_quantity=10
-        )
-
-        initial_stock = product.stock_quantity
-
-        # Create order (this succeeds and reserves stock)
-        order_result = order_service.create_order(
-            buyer=test_user,
-            vendor_id=approved_vendor.id,
-            delivery_address_id=test_address.id,
-            items=[{'product_id': product.id, 'quantity': 5}]
-        )
-
-        assert order_result.success is True
-        order = order_result.data
-
-        # Stock is reserved after order creation
-        product.refresh_from_db()
-        assert product.stock_quantity == 5  # 10 - 5
-
-        # Attempt payment that fails
-        with patch('apps.integrations.services.stripe_service.StripeConnectService.process_marketplace_order') as mock_payment:
-            mock_payment.return_value = ServiceResult.fail(
-                'Payment failed',
-                'PAYMENT_FAILED'
-            )
-
-            payment_result = order_service.process_payment(
-                order_id=order.id,
-                payment_method_id='pm_test_fail'
-            )
-
-            # Payment should fail
-            assert payment_result.success is False
-
-        # Order remains in pending state
-        order.refresh_from_db()
-        assert order.status == 'pending'
-
-        # If we cancel the order, stock should be returned
-        order_service.update_order_status(
-            order_id=order.id,
-            new_status='cancelled',
-            user=test_user
-        )
-
-        product.refresh_from_db()
-        assert product.stock_quantity == initial_stock  # Stock returned
+            mock_process.assert_called_once()

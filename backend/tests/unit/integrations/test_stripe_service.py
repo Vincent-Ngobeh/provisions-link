@@ -34,16 +34,18 @@ class TestVendorAccountCreation:
         mock_link.url = 'https://connect.stripe.com/onboard/test123'
         mock_link.expires_at = 1234567890
 
-        with patch('stripe.Account.create') as mock_create:
-            mock_create.return_value = mock_account
+        # Patch stripe.api_key to look like a live key to bypass test mode
+        with patch.object(stripe, 'api_key', 'sk_live_mockedkey'):
+            with patch('stripe.Account.create') as mock_create:
+                mock_create.return_value = mock_account
 
-            with patch.object(stripe_service, 'generate_onboarding_link') as mock_onboard:
-                mock_onboard.return_value = ServiceResult.ok({
-                    'url': mock_link.url
-                })
+                with patch.object(stripe_service, 'generate_onboarding_link') as mock_onboard:
+                    mock_onboard.return_value = ServiceResult.ok({
+                        'url': mock_link.url
+                    })
 
-                # Act
-                result = stripe_service.create_vendor_account(test_vendor)
+                    # Act
+                    result = stripe_service.create_vendor_account(test_vendor)
 
         # Assert
         assert result.success is True
@@ -82,11 +84,13 @@ class TestVendorAccountCreation:
         test_vendor.stripe_account_id = None
         test_vendor.save()
 
-        with patch('stripe.Account.create') as mock_create:
-            mock_create.side_effect = stripe.error.StripeError('API Error')
+        # Patch stripe.api_key to look like a live key to bypass test mode
+        with patch.object(stripe, 'api_key', 'sk_live_mockedkey'):
+            with patch('stripe.Account.create') as mock_create:
+                mock_create.side_effect = stripe.error.StripeError('API Error')
 
-            # Act
-            result = stripe_service.create_vendor_account(test_vendor)
+                # Act
+                result = stripe_service.create_vendor_account(test_vendor)
 
         # Assert
         assert result.success is False
@@ -101,18 +105,28 @@ class TestVendorOnboarding:
     def test_generate_onboarding_link_success(self, stripe_service, test_vendor):
         """Test successful onboarding link generation."""
         # Arrange
-        test_vendor.stripe_account_id = 'acct_test123'
+        # Use account ID that doesn't look like a mock (no underscores after acct_)
+        test_vendor.stripe_account_id = 'acct_1234567890ABC'
         test_vendor.save()
+
+        mock_account = MagicMock()
+        mock_account.id = test_vendor.stripe_account_id
 
         mock_link = MagicMock()
         mock_link.url = 'https://connect.stripe.com/onboard/test'
         mock_link.expires_at = int(datetime.now().timestamp()) + 300
 
-        with patch('stripe.AccountLink.create') as mock_create:
-            mock_create.return_value = mock_link
+        # Patch stripe.api_key to look like a live key
+        with patch.object(stripe, 'api_key', 'sk_live_mockedkey'):
+            with patch('stripe.Account.retrieve') as mock_retrieve:
+                mock_retrieve.return_value = mock_account
 
-            # Act
-            result = stripe_service.generate_onboarding_link(test_vendor)
+                with patch('stripe.AccountLink.create') as mock_create:
+                    mock_create.return_value = mock_link
+
+                    # Act
+                    result = stripe_service.generate_onboarding_link(
+                        test_vendor)
 
         # Assert
         assert result.success is True
@@ -122,22 +136,29 @@ class TestVendorOnboarding:
         # Verify link creation parameters
         mock_create.assert_called_once()
         call_args = mock_create.call_args[1]
-        assert call_args['account'] == 'acct_test123'
+        assert call_args['account'] == 'acct_1234567890ABC'
         assert call_args['type'] == 'account_onboarding'
 
     @pytest.mark.django_db
     def test_generate_onboarding_link_no_account(self, stripe_service, test_vendor):
-        """Test that onboarding link requires Stripe account."""
+        """Test that onboarding link creation fails when account creation fails."""
         # Arrange
         test_vendor.stripe_account_id = None
         test_vendor.save()
 
-        # Act
-        result = stripe_service.generate_onboarding_link(test_vendor)
+        # Patch stripe.api_key to look like a live key
+        with patch.object(stripe, 'api_key', 'sk_live_mockedkey'):
+            # Mock account creation to fail
+            with patch('stripe.Account.create') as mock_create:
+                mock_create.side_effect = stripe.error.StripeError(
+                    'Account creation failed')
+
+                # Act
+                result = stripe_service.generate_onboarding_link(test_vendor)
 
         # Assert
         assert result.success is False
-        assert result.error_code == 'NO_ACCOUNT'
+        assert result.error_code == 'STRIPE_ERROR'
 
 
 class TestAccountStatus:

@@ -204,7 +204,6 @@ class VendorFactory(DjangoModelFactory):
         # Ensure max 20 chars
         lambda _: f"GB{fake.numerify('#########')}"[:20])
     min_order_value = Decimal('50.00')
-    logo_url = factory.Faker('image_url')
 
 
 class CategoryFactory(DjangoModelFactory):
@@ -412,6 +411,12 @@ if HAS_GIS:
         buyer_location = factory.LazyAttribute(
             lambda _: get_point_class()(-0.1276, 51.5074))
         buyer_postcode = factory.LazyAttribute(lambda _: fake.postcode())
+
+        # Create delivery address for the buyer
+        delivery_address = factory.SubFactory(
+            AddressFactory,
+            user=factory.SelfAttribute('..buyer')
+        )
 
         stripe_payment_intent_id = factory.LazyAttribute(
             lambda _: f"pi_{fake.uuid4()[:24]}")

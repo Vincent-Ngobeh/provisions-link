@@ -389,11 +389,9 @@ class TestProductSearch:
         data = result.data
 
         assert len(data['products']) == 10
-        assert data['pagination']['page'] == 1
-        assert data['pagination']['total_pages'] == 3
-        assert data['pagination']['total_products'] == 25
-        assert data['pagination']['has_next'] is True
-        assert data['pagination']['has_previous'] is False
+        assert data['count'] == 25
+        assert data['next'] is not None
+        assert data['previous'] is None
 
 
 class TestProductStockManagement:

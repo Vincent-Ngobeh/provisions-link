@@ -227,6 +227,7 @@ class TestBuyingGroupRealtimeSerializer:
 
     def test_includes_realtime_fields(self):
         """Test that real-time fields are included."""
+        from django.db.models import Count, Q
         group = BuyingGroupFactory(
             target_quantity=100,
             current_quantity=45,
@@ -236,6 +237,14 @@ class TestBuyingGroupRealtimeSerializer:
 
         # Add some commitments
         GroupCommitmentFactory.create_batch(3, group=group)
+
+        # Annotate the group with participants_count like the view does
+        group = BuyingGroup.objects.annotate(
+            participants_count=Count(
+                'commitments',
+                filter=Q(commitments__status='pending')
+            )
+        ).get(pk=group.pk)
 
         serializer = BuyingGroupRealtimeSerializer(group)
         data = serializer.data

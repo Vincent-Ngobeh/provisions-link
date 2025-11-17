@@ -2,7 +2,7 @@
 Unit tests for GroupBuyingService using TDD approach.
 Tests business logic for group buying calculations, thresholds, and operations.
 """
-from tests.conftest import UserFactory
+from tests.conftest import UserFactory, AddressFactory
 import pytest
 from decimal import Decimal
 from datetime import datetime, timedelta
@@ -231,6 +231,7 @@ class TestGroupBuyingCommitments:
         group_buying_service,
         test_buying_group,
         test_user,
+        test_address,
         mock_geocoding_response,
         mock_stripe_payment_intent
     ):
@@ -249,7 +250,8 @@ class TestGroupBuyingCommitments:
                 group_id=test_buying_group.id,
                 buyer=test_user,
                 quantity=5,
-                buyer_postcode='SW1A 1AA'
+                buyer_postcode='SW1A 1AA',
+                delivery_address_id=test_address.id
             )
 
         # Assert
@@ -270,17 +272,20 @@ class TestGroupBuyingCommitments:
         group_buying_service,
         test_buying_group,
         test_user,
+        test_address,
         mock_geocoding_response
     ):
         """Test that users cannot commit to the same group twice."""
         # Arrange
         # Create existing commitment
-        GroupCommitment.objects.create(
+        from tests.conftest import GroupCommitmentFactory
+        GroupCommitmentFactory(
             group=test_buying_group,
             buyer=test_user,
             quantity=5,
             buyer_location=Point(-0.1276, 51.5074),
             buyer_postcode='SW1A 1AA',
+            delivery_address=test_address,
             status='pending'
         )
 
@@ -289,19 +294,21 @@ class TestGroupBuyingCommitments:
             group_id=test_buying_group.id,
             buyer=test_user,
             quantity=3,
-            buyer_postcode='SW1A 1AA'
+            buyer_postcode='SW1A 1AA',
+            delivery_address_id=test_address.id
         )
 
         # Assert
         assert result.success is False
-        assert result.error_code == 'DUPLICATE_COMMITMENT'
+        assert result.error_code == 'ALREADY_COMMITTED'
 
     @pytest.mark.django_db
     def test_commit_to_group_validates_location(
         self,
         group_buying_service,
         test_buying_group,
-        test_user
+        test_user,
+        test_address
     ):
         """Test that commitment validates buyer is within group radius."""
         # Arrange
@@ -324,7 +331,8 @@ class TestGroupBuyingCommitments:
                 group_id=test_buying_group.id,
                 buyer=test_user,
                 quantity=5,
-                buyer_postcode='OX1 1AA'
+                buyer_postcode='OX1 1AA',
+                delivery_address_id=test_address.id
             )
 
         # Assert
@@ -337,6 +345,7 @@ class TestGroupBuyingCommitments:
         group_buying_service,
         test_buying_group,
         test_user,
+        test_address,
         mock_geocoding_response,
         mock_stripe_payment_intent
     ):
@@ -358,15 +367,16 @@ class TestGroupBuyingCommitments:
                 group_id=test_buying_group.id,
                 buyer=test_user,
                 quantity=5,  # This will reach the target
-                buyer_postcode='SW1A 1AA'
+                buyer_postcode='SW1A 1AA',
+                delivery_address_id=test_address.id
             )
 
         # Assert
         assert result.success is True
 
-        # Check that group status was updated
+        # When target is reached, group is processed immediately and status becomes 'completed'
         test_buying_group.refresh_from_db()
-        assert test_buying_group.status == 'active'
+        assert test_buying_group.status == 'completed'
 
         # Check that threshold event was created
         threshold_event = GroupUpdate.objects.filter(
@@ -436,8 +446,9 @@ class TestGroupBuyingExpiration:
         )
 
         # Create a commitment to test payment cancellation
+        from tests.conftest import GroupCommitmentFactory
         buyer = UserFactory()
-        commitment = GroupCommitment.objects.create(
+        commitment = GroupCommitmentFactory(
             group=expired_group,
             buyer=buyer,
             quantity=50,
@@ -485,7 +496,8 @@ class TestGroupBuyingCancellation:
         test_buying_group.current_quantity = 50
         test_buying_group.save()
 
-        commitment = GroupCommitment.objects.create(
+        from tests.conftest import GroupCommitmentFactory
+        commitment = GroupCommitmentFactory(
             group=test_buying_group,
             buyer=test_user,
             quantity=10,
@@ -530,7 +542,8 @@ class TestGroupBuyingCancellation:
         test_buying_group.status = 'completed'  # Already processed
         test_buying_group.save()
 
-        commitment = GroupCommitment.objects.create(
+        from tests.conftest import GroupCommitmentFactory
+        commitment = GroupCommitmentFactory(
             group=test_buying_group,
             buyer=test_user,
             quantity=10,
@@ -547,7 +560,7 @@ class TestGroupBuyingCancellation:
 
         # Assert
         assert result.success is False
-        assert result.error_code == 'GROUP_PROCESSED'
+        assert result.error_code == 'CANNOT_LEAVE'
 
 
 class TestGroupBuyingIntegration:
@@ -578,25 +591,28 @@ class TestGroupBuyingIntegration:
         group = create_result.data
 
         # 2. Add commitments
+        from tests.conftest import AddressFactory
         buyers = [UserFactory() for _ in range(4)]
+        addresses = [AddressFactory(user=buyer) for buyer in buyers]
 
         with patch('apps.integrations.services.stripe_service.StripeConnectService.create_payment_intent_for_group') as mock_stripe:
             mock_stripe.return_value = ServiceResult.ok(
                 {'intent_id': 'pi_test'})
 
-            for buyer in buyers:
+            for buyer, address in zip(buyers, addresses):
                 commit_result = group_buying_service.commit_to_group(
                     group_id=group.id,
                     buyer=buyer,
                     quantity=5,  # 4 buyers * 5 = 20 (reaches target)
-                    buyer_postcode='SW1A 1AA'
+                    buyer_postcode='SW1A 1AA',
+                    delivery_address_id=address.id
                 )
                 assert commit_result.success is True
 
-        # 3. Verify group reached target
+        # 3. When target is reached, group is processed immediately and status becomes 'completed'
         group.refresh_from_db()
         assert group.current_quantity == 20
-        assert group.status == 'active'
+        assert group.status == 'completed'
 
         # 4. Process the group
         with patch.object(group_buying_service, '_process_successful_group') as mock_process:

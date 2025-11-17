@@ -14,7 +14,7 @@ from datetime import timedelta
 from apps.buying_groups.models import BuyingGroup, GroupCommitment
 from tests.conftest import (
     UserFactory, VendorFactory, ProductFactory,
-    BuyingGroupFactory, GroupCommitmentFactory
+    BuyingGroupFactory, GroupCommitmentFactory, AddressFactory
 )
 
 
@@ -112,6 +112,7 @@ class TestBuyingGroupCommitAPI:
     def setup_method(self):
         self.client = APIClient()
         self.user = UserFactory()
+        self.address = AddressFactory(user=self.user)
         self.vendor = VendorFactory(is_approved=True)
         self.product = ProductFactory(
             vendor=self.vendor, price=Decimal('25.00'))
@@ -130,7 +131,8 @@ class TestBuyingGroupCommitAPI:
 
         data = {
             'quantity': 5,
-            'postcode': 'SW1A 1AA'
+            'postcode': 'SW1A 1AA',
+            'delivery_address_id': self.address.id
         }
 
         response = self.client.post(self.url, data)
@@ -152,7 +154,8 @@ class TestBuyingGroupCommitAPI:
         """Test that unauthenticated users cannot commit."""
         data = {
             'quantity': 5,
-            'postcode': 'SW1A 1AA'
+            'postcode': 'SW1A 1AA',
+            'delivery_address_id': self.address.id
         }
 
         response = self.client.post(self.url, data)
@@ -168,13 +171,15 @@ class TestBuyingGroupCommitAPI:
             group=self.group,
             buyer=self.user,
             quantity=5,
+            delivery_address=self.address,
             status='pending'
         )
 
         # Try second commitment
         data = {
             'quantity': 3,
-            'postcode': 'SW1A 1AA'
+            'postcode': 'SW1A 1AA',
+            'delivery_address_id': self.address.id
         }
 
         response = self.client.post(self.url, data)
@@ -192,7 +197,8 @@ class TestBuyingGroupCommitAPI:
 
         data = {
             'quantity': 5,
-            'postcode': 'SW1A 1AA'
+            'postcode': 'SW1A 1AA',
+            'delivery_address_id': self.address.id
         }
 
         response = self.client.post(self.url, data)
@@ -205,12 +211,12 @@ class TestBuyingGroupCommitAPI:
         self.client.force_authenticate(self.user)
 
         # Missing quantity
-        data = {'postcode': 'SW1A 1AA'}
+        data = {'postcode': 'SW1A 1AA', 'delivery_address_id': self.address.id}
         response = self.client.post(self.url, data)
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
         # Missing postcode
-        data = {'quantity': 5}
+        data = {'quantity': 5, 'delivery_address_id': self.address.id}
         response = self.client.post(self.url, data)
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 

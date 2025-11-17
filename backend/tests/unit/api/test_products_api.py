@@ -246,9 +246,9 @@ class TestProductSearchAPI:
         response = self.client.post(self.url, data)
 
         assert response.status_code == status.HTTP_200_OK
-        assert response.data['pagination']['total_products'] >= 1
+        assert response.data['count'] >= 1
         assert any('tomato' in p['name'].lower()
-                   for p in response.data['products'])
+                   for p in response.data['results'])
 
     def test_search_products_by_price_range(self):
         """Test filtering products by price range."""
@@ -264,7 +264,7 @@ class TestProductSearchAPI:
         response = self.client.post(self.url, data)
 
         assert response.status_code == status.HTTP_200_OK
-        for product in response.data['products']:
+        for product in response.data['results']:
             price = Decimal(product['price'])
             assert Decimal('10.00') <= price <= Decimal('30.00')
 
