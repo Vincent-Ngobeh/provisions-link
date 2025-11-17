@@ -9,6 +9,7 @@ import random
 from apps.buying_groups.models import BuyingGroup, GroupCommitment
 from apps.products.models import Product
 from apps.core.models import User
+from apps.buying_groups.services.group_buying_service import GroupBuyingService
 
 
 class Command(BaseCommand):
@@ -262,6 +263,26 @@ class Command(BaseCommand):
                 f"{quantity_allocated:3}/{target_quantity:3} ({progress_pct:.0f}%) | "
                 f"{template['discount']}% off | {days_left}d left"
             )
+
+            # Process groups with 'active' status to create orders and confirm commitments
+            if status == 'active':
+                self.stdout.write(
+                    f"     Processing active group {group.id} to create orders..."
+                )
+                try:
+                    service = GroupBuyingService()
+                    service._handle_target_reached(group)
+                    self.stdout.write(
+                        self.style.SUCCESS(
+                            f"     ✅ Created orders and confirmed commitments for group {group.id}"
+                        )
+                    )
+                except Exception as e:
+                    self.stdout.write(
+                        self.style.WARNING(
+                            f"     ⚠️  Failed to process group {group.id}: {str(e)}"
+                        )
+                    )
 
         self.stdout.write(
             self.style.SUCCESS(
