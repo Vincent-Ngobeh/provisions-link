@@ -20,31 +20,99 @@ class Command(BaseCommand):
         self.stdout.write("TARGET REACHED TEST - IMMEDIATE ORDER CREATION")
         self.stdout.write("="*80 + "\n")
 
-        # Find a group close to target
-        self.stdout.write("🔍 Searching for group close to target...\n")
+        # Find an open buying group
+        self.stdout.write("🔍 Searching for open buying group...\n")
 
         open_groups = BuyingGroup.objects.filter(
             status='open',
             expires_at__gt=timezone.now()
-        ).select_related('product__vendor')
+        ).select_related('product__vendor').order_by('-id')
 
-        # Find a group where we need just 1-5 more units to reach target
-        target_group = None
-        for group in open_groups:
-            units_needed = group.target_quantity - group.current_quantity
-            if 1 <= units_needed <= 5:
-                target_group = group
-                break
-
-        if not target_group:
+        if not open_groups.exists():
             self.stdout.write(self.style.ERROR(
-                "❌ No suitable group found (need a group 1-5 units from target)"))
+                "❌ No open buying groups found"))
             self.stdout.write(
-                "   Try running the seed command to create more groups")
+                "   Try running: python manage.py seed_buying_groups")
             return
 
-        group = target_group
+        # Pick the first open group
+        group = open_groups.first()
         self.stdout.write(self.style.SUCCESS(f"✅ Found group {group.id}\n"))
+
+        # Calculate how many units we need to get close to target (1-3 units away)
+        units_to_add = max(0, group.target_quantity -
+                           group.current_quantity - 3)
+
+        if units_to_add > 0:
+            self.stdout.write(
+                f"📝 Creating commitments to bring group close to target...")
+            self.stdout.write(
+                f"   Current: {group.current_quantity}, Target: {group.target_quantity}")
+            self.stdout.write(
+                f"   Need to add: {units_to_add} units to be 3 units from target\n")
+
+            # Get buyers
+            from apps.core.models import User
+            buyers = list(User.objects.filter(email__endswith='@buyer.test'))
+
+            if not buyers:
+                self.stdout.write(self.style.ERROR(
+                    "❌ No buyers found. Run: python manage.py seed_users"))
+                return
+
+            # Create commitments
+            commitments_created = 0
+            quantity_allocated = 0
+
+            while quantity_allocated < units_to_add and len(buyers) > commitments_created:
+                buyer = buyers[commitments_created % len(buyers)]
+
+                # Get buyer's address
+                buyer_address = buyer.addresses.filter(is_default=True).first()
+                if not buyer_address:
+                    buyer_address = buyer.addresses.first()
+
+                if not buyer_address:
+                    self.stdout.write(self.style.WARNING(
+                        f"   ⚠️  Buyer {buyer.email} has no address, skipping..."))
+                    commitments_created += 1
+                    continue
+
+                # Calculate quantity for this commitment
+                remaining = units_to_add - quantity_allocated
+                commit_quantity = min(10, remaining)  # Max 10 per commitment
+
+                if commit_quantity < 1:
+                    break
+
+                # Create commitment
+                GroupCommitment.objects.create(
+                    group=group,
+                    buyer=buyer,
+                    quantity=commit_quantity,
+                    buyer_location=buyer_address.location,
+                    buyer_postcode=buyer_address.postcode,
+                    delivery_address=buyer_address,
+                    status='pending',
+                    stripe_payment_intent_id=f'pi_test_target_{group.id}_{buyer.id}_{int(timezone.now().timestamp())}'
+                )
+
+                quantity_allocated += commit_quantity
+                commitments_created += 1
+                self.stdout.write(
+                    f"   ✅ Created commitment: {buyer.email} - {commit_quantity} units")
+
+            # Update group's current_quantity
+            group.current_quantity += quantity_allocated
+            group.save(update_fields=['current_quantity'])
+
+            self.stdout.write(self.style.SUCCESS(
+                f"\n   ✅ Created {commitments_created} commitments totaling {quantity_allocated} units"))
+            self.stdout.write(
+                f"   New quantity: {group.current_quantity}/{group.target_quantity}\n")
+        else:
+            self.stdout.write(
+                f"   Group is already close to or past target, no commitments needed\n")
 
         # Display group details
         self.stdout.write("📦 GROUP DETAILS:")
@@ -66,7 +134,7 @@ class Command(BaseCommand):
         self.stdout.write(f"\n   Status: {group.status}")
         self.stdout.write(f"   Expires: {group.expires_at}\n")
 
-        # Save original state
+        # Save original state (before creating test commitments)
         original_current_quantity = group.current_quantity
         original_status = group.status
 
@@ -78,6 +146,14 @@ class Command(BaseCommand):
         original_commitment_count = existing_commitments.count()
         self.stdout.write(
             f"   Current Commitments: {original_commitment_count}\n")
+
+        # Track commitments created by this test (for cleanup)
+        test_commitment_ids = list(
+            GroupCommitment.objects.filter(
+                group=group,
+                stripe_payment_intent_id__startswith='pi_test_target_'
+            ).values_list('id', flat=True)
+        )
 
         # Count orders before
         orders_before = Order.objects.filter(group=group).count()
@@ -228,22 +304,35 @@ class Command(BaseCommand):
             self.stdout.write(
                 f"   Reset {confirmed_commitments.count()} commitments to pending")
 
-        # Delete created orders and restore stock
-        new_orders = Order.objects.filter(group=group).order_by(
-            '-created_at')[:orders_created] if orders_created > 0 else Order.objects.none()
-        if new_orders.exists():
-            order_count = new_orders.count()
+        # Delete test commitments created by this test
+        test_commitments = GroupCommitment.objects.filter(
+            id__in=test_commitment_ids
+        )
+        if test_commitments.exists():
+            test_commit_count = test_commitments.count()
+            test_commitments.delete()
+            self.stdout.write(
+                f"   Deleted {test_commit_count} test commitments")
+
+        # Get all orders created during this test (linked to commitments from this group)
+        orders_to_delete = Order.objects.filter(group=group)
+
+        if orders_to_delete.exists():
+            # Collect order IDs for deletion (can't delete sliced queryset)
+            order_ids = []
 
             # Return stock before deleting
-            for order in new_orders:
+            for order in orders_to_delete:
+                order_ids.append(order.id)
                 for item in order.items.all():
                     Product.objects.filter(id=item.product.id).update(
                         stock_quantity=F('stock_quantity') + item.quantity
                     )
 
-            new_orders.delete()
+            # Delete by IDs (not using sliced queryset)
+            deleted_count = Order.objects.filter(id__in=order_ids).delete()[0]
             self.stdout.write(
-                f"   Deleted {order_count} test orders and restored stock")
+                f"   Deleted {deleted_count} test orders and restored stock")
 
         # Verify restoration
         group.refresh_from_db()
