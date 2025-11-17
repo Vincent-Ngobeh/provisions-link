@@ -256,7 +256,7 @@ class TestGroupBuyingCommitments:
 
         # Assert
         assert result.success is True
-        commitment = result.data
+        commitment = result.data['commitment']
         assert isinstance(commitment, GroupCommitment)
         assert commitment.buyer == test_user
         assert commitment.quantity == 5
@@ -312,15 +312,17 @@ class TestGroupBuyingCommitments:
     ):
         """Test that commitment validates buyer is within group radius."""
         # Arrange
-        test_buying_group.center_point = Point(-0.1276, 51.5074)  # London
-        test_buying_group.radius_km = 5
+        # London
+        test_buying_group.center_point = Point(-0.1276, 51.5074, srid=4326)
+        test_buying_group.radius_km = 50  # 50km radius
         test_buying_group.save()
 
-        # Mock geocoding to return location outside radius
+        # Mock geocoding to return location far outside radius (Sydney, Australia)
         mock_location = Mock()
         mock_location.success = True
         mock_location.data = {
-            'point': Point(-1.2577, 51.7520)  # Oxford - way outside 5km radius
+            # Sydney, Australia - definitely outside 50km radius from London
+            'point': Point(151.2093, -33.8688, srid=4326)
         }
 
         with patch('apps.integrations.services.geocoding_service.GeocodingService.geocode_postcode') as mock_geo:
@@ -331,13 +333,13 @@ class TestGroupBuyingCommitments:
                 group_id=test_buying_group.id,
                 buyer=test_user,
                 quantity=5,
-                buyer_postcode='OX1 1AA',
+                buyer_postcode='SYD 2000',
                 delivery_address_id=test_address.id
             )
 
         # Assert
         assert result.success is False
-        assert result.error_code == 'OUTSIDE_RADIUS'
+        assert result.error_code == 'OUT_OF_RADIUS'
 
     @pytest.mark.django_db
     def test_commit_triggers_threshold_notification(

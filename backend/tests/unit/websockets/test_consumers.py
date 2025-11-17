@@ -255,7 +255,7 @@ class TestGroupSubscription:
         await communicator.disconnect()
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 class TestBroadcastMessages:
     """Test receiving broadcast messages."""
@@ -565,7 +565,7 @@ class TestBroadcastMessages:
         await communicator.disconnect()
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 class TestErrorHandling:
     """Test error handling in WebSocket consumer."""
