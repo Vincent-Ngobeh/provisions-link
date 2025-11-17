@@ -218,6 +218,15 @@ export interface OrderDetail extends Order {
   paid_at?: string;
   delivered_at?: string;
   stripe_payment_intent_id?: string; // Exists in model but not always exposed
+  group_details?: {
+    id: number;
+    discount_percent: string;
+    product_name: string;
+    status: string;
+    area_name: string;
+    target_quantity: number;
+    current_quantity: number;
+  } | null;
 }
 
 export interface OrderItem {
