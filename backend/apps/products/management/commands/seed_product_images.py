@@ -36,7 +36,7 @@ class Command(BaseCommand):
         skip_existing = options['skip_existing']
 
         # Unsplash API configuration (using public demo access)
-        # For production, get your own free API key from https://unsplash.com/developers
+        # For production, obtain a free API key from https://unsplash.com/developers
         self.unsplash_access_key = os.getenv('UNSPLASH_ACCESS_KEY', 'demo')
 
         if not use_placeholders and self.unsplash_access_key == 'demo':
@@ -49,7 +49,7 @@ class Command(BaseCommand):
             )
 
         # Map product names to Unsplash search queries
-        # This maps your exact hardcoded product names to appropriate image searches
+        # This maps exact hardcoded product names to appropriate image searches
         self.image_search_mapping = {
             # Borough Market Organics
             'Heritage Tomatoes Mix': 'heritage tomatoes colorful',

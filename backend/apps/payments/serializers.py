@@ -199,7 +199,7 @@ class ConfirmPaymentSerializer(serializers.Serializer):
             attrs['to_update'] = orders
 
         # Verify payment intent matches at least one order
-        # (In real implementation, you'd fetch from Stripe to verify)
+        # (In real implementation, fetch from Stripe to verify)
         order_with_intent = any(
             o.stripe_payment_intent_id == payment_intent_id
             for o in orders

@@ -98,7 +98,7 @@ export default function VendorDashboardPage() {
         description: 'Complete the Stripe setup in the new window.',
       });
 
-      // Poll for completion (optional - you can also use webhooks)
+      // Poll for completion (optional - webhooks can also be used)
       const pollInterval = setInterval(() => {
         if (stripeWindow.closed) {
           clearInterval(pollInterval);

@@ -85,7 +85,7 @@ class VendorRegistrationSerializer(serializers.ModelSerializer):
     def validate_postcode(self, value):
         """Validate and geocode postcode"""
         # This will be handled by the service layer
-        # For now, just validate format
+        # Currently validates format only
         import re
         pattern = r'^[A-Z]{1,2}\d{1,2}[A-Z]?\s?\d[A-Z]{2}$'
         if not re.match(pattern, value.upper()):
@@ -96,7 +96,6 @@ class VendorRegistrationSerializer(serializers.ModelSerializer):
         # Extract postcode for geocoding
         postcode = validated_data.get('postcode')
         # In production, this would call geocoding service
-        # For now, use a placeholder point
         validated_data['location'] = Point(-0.1276, 51.5074)  # London
 
         # Create vendor linked to current user

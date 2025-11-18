@@ -113,8 +113,8 @@ class CreatePaymentIntentView(views.APIView):
                     'destination': vendor.stripe_account_id,
                 }
             elif is_test_mode:
-                # In test mode with placeholder account, just log the commission
-                # but don't try to transfer to a non-existent account
+                # In test mode with placeholder account, log the commission
+                # but do not attempt transfer to a non-existent account
                 logger.info(
                     f"Test mode: Would charge {total_pence} pence with "
                     f"{commission_pence} pence commission to vendor {vendor.id}"

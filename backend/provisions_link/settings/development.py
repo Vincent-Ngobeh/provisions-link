@@ -4,8 +4,8 @@ Development settings - used for local development.
 from .base import *
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
-DEBUG_PROPAGATE_EXCEPTIONS = True
+DEBUG = False
+DEBUG_PROPAGATE_EXCEPTIONS = False
 
 ALLOWED_HOSTS = ['localhost', '127.0.0.1', '.localhost']
 
