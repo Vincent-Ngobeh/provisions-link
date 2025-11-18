@@ -12,6 +12,14 @@ from django.contrib.auth import authenticate
 from django.http import HttpResponse
 import json
 
+from drf_spectacular.utils import (
+    extend_schema,
+    extend_schema_view,
+    OpenApiParameter,
+    OpenApiExample
+)
+from drf_spectacular.types import OpenApiTypes as Types
+
 from .models import User, Address, PrivacySettings
 from .serializers import (
     UserPublicSerializer,
@@ -25,6 +33,62 @@ from .serializers import (
 )
 
 
+@extend_schema_view(
+    list=extend_schema(
+        summary="List users (admin only)",
+        description="""
+        Retrieve list of users. Admin/staff can see all users, regular users see only themselves.
+ 
+        **Permissions:** Authenticated users (limited to own profile unless staff)
+        """,
+        tags=['Users']
+    ),
+    retrieve=extend_schema(
+        summary="Get user details",
+        description="""
+        Retrieve detailed information about a specific user.
+ 
+        **Permissions:** Own profile or admin
+        """,
+        tags=['Users']
+    ),
+    create=extend_schema(
+        summary="Create user (use /register/ instead)",
+        description="""
+        Standard user creation endpoint. Consider using /register/ for better flow.
+ 
+        **Permissions:** Public
+        """,
+        tags=['Users']
+    ),
+    update=extend_schema(
+        summary="Update user profile",
+        description="""
+        Update all user profile fields.
+ 
+        **Permissions:** Own profile or admin
+        """,
+        tags=['Users']
+    ),
+    partial_update=extend_schema(
+        summary="Partially update user profile",
+        description="""
+        Update specific user profile fields.
+ 
+        **Permissions:** Own profile or admin
+        """,
+        tags=['Users']
+    ),
+    destroy=extend_schema(
+        summary="Delete user (use /delete_account/ instead)",
+        description="""
+        Delete user account. Consider using /delete_account/ for proper GDPR flow.
+ 
+        **Permissions:** Own profile or admin
+        """,
+        tags=['Users']
+    ),
+)
 class UserViewSet(viewsets.ModelViewSet):
     """
     ViewSet for user operations.
@@ -57,6 +121,43 @@ class UserViewSet(viewsets.ModelViewSet):
             return super().get_queryset()
         return super().get_queryset().filter(id=self.request.user.id)
 
+    @extend_schema(
+        summary="Register a new user account",
+        description="""
+        Create a new user account with email and password.
+ 
+        **Process:**
+        1. Validates email uniqueness
+        2. Creates user account
+        3. Generates JWT tokens
+        4. Returns user profile and auth tokens
+ 
+        **Example Request:**
+```json
+        {
+            "email": "john@example.com",
+            "password": "SecurePass123!",
+            "first_name": "John",
+            "last_name": "Doe",
+            "phone_number": "+44 20 1234 5678"
+        }
+```
+ 
+        **Permissions:** Public (no authentication required)
+        """,
+        request=UserRegistrationSerializer,
+        responses={
+            201: {
+                'type': 'object',
+                'properties': {
+                    'user': {'type': 'object'},
+                    'tokens': {'type': 'object'},
+                    'message': {'type': 'string'}
+                }
+            }
+        },
+        tags=['Users']
+    )
     @action(detail=False, methods=['post'], permission_classes=[AllowAny])
     def register(self, request):
         """
@@ -80,6 +181,61 @@ class UserViewSet(viewsets.ModelViewSet):
             'message': 'Registration successful'
         }, status=status.HTTP_201_CREATED)
 
+    @extend_schema(
+        summary="Login with email and password",
+        description="""
+        Authenticate user and return JWT tokens.
+ 
+        **Process:**
+        1. Validates credentials
+        2. Generates JWT access and refresh tokens
+        3. Returns user profile and vendor status (if applicable)
+ 
+        **Example Request:**
+```json
+        {
+            "email": "john@example.com",
+            "password": "SecurePass123!"
+        }
+```
+ 
+        **Example Response:**
+```json
+        {
+            "user": {
+                "id": 5,
+                "email": "john@example.com",
+                "first_name": "John",
+                "last_name": "Doe"
+            },
+            "is_vendor": true,
+            "vendor": {
+                "id": 3,
+                "business_name": "John's Farm"
+            },
+            "tokens": {
+                "refresh": "eyJ0eXAiOiJKV1QiLCJhbGc...",
+                "access": "eyJ0eXAiOiJKV1QiLCJhbGc..."
+            }
+        }
+```
+ 
+        **Permissions:** Public (no authentication required)
+        """,
+        request=LoginSerializer,
+        responses={
+            200: {
+                'type': 'object',
+                'properties': {
+                    'user': {'type': 'object'},
+                    'is_vendor': {'type': 'boolean'},
+                    'vendor': {'type': 'object'},
+                    'tokens': {'type': 'object'}
+                }
+            }
+        },
+        tags=['Users']
+    )
     @action(detail=False, methods=['post'], permission_classes=[AllowAny])
     def login(self, request):
         """
@@ -111,6 +267,22 @@ class UserViewSet(viewsets.ModelViewSet):
             }
         })
 
+    @extend_schema(
+        summary="Get current user's profile",
+        description="""
+        Retrieve the authenticated user's complete profile.
+ 
+        **Includes:**
+        - Personal information (email, name, phone)
+        - Account settings
+        - Vendor status and details (if applicable)
+        - Privacy settings
+ 
+        **Permissions:** Authenticated users only
+        """,
+        responses={200: UserPrivateSerializer},
+        tags=['Users']
+    )
     @action(detail=False, methods=['get'])
     def profile(self, request):
         """
@@ -120,6 +292,39 @@ class UserViewSet(viewsets.ModelViewSet):
         serializer = UserPrivateSerializer(request.user)
         return Response(serializer.data)
 
+    @extend_schema(
+        summary="Update current user's profile",
+        description="""
+        Update user profile fields.
+ 
+        **Updatable Fields:**
+        - first_name
+        - last_name
+        - phone_number
+        - email (requires verification)
+ 
+        **Example Request:**
+```json
+        {
+            "first_name": "Jane",
+            "phone_number": "+44 20 9876 5432"
+        }
+```
+ 
+        **Permissions:** Authenticated users only
+        """,
+        request=UserPrivateSerializer,
+        responses={
+            200: {
+                'type': 'object',
+                'properties': {
+                    'message': {'type': 'string'},
+                    'user': {'type': 'object'}
+                }
+            }
+        },
+        tags=['Users']
+    )
     @action(detail=False, methods=['patch'])
     def update_profile(self, request):
         """
@@ -139,6 +344,38 @@ class UserViewSet(viewsets.ModelViewSet):
             'user': serializer.data
         })
 
+    @extend_schema(
+        summary="Change user's password",
+        description="""
+        Change password with current password verification.
+ 
+        **Requirements:**
+        - Must provide current password
+        - New password must meet security requirements
+        - Returns new JWT tokens after password change
+ 
+        **Example Request:**
+```json
+        {
+            "old_password": "OldPass123!",
+            "new_password": "NewSecurePass456!"
+        }
+```
+ 
+        **Permissions:** Authenticated users only
+        """,
+        request=PasswordChangeSerializer,
+        responses={
+            200: {
+                'type': 'object',
+                'properties': {
+                    'message': {'type': 'string'},
+                    'tokens': {'type': 'object'}
+                }
+            }
+        },
+        tags=['Users']
+    )
     @action(detail=False, methods=['post'])
     def change_password(self, request):
         """
@@ -166,6 +403,41 @@ class UserViewSet(viewsets.ModelViewSet):
             }
         })
 
+    @extend_schema(
+        summary="Export user data (GDPR Article 20)",
+        description="""
+        Export all user data in JSON format for GDPR compliance (Right to Data Portability).
+ 
+        **Includes:**
+        - User profile information
+        - All orders and transactions
+        - Buying group commitments
+        - Addresses
+        - Privacy settings
+        - Activity history
+ 
+        **Response Format:**
+        - Content-Type: application/json
+        - Downloads as: user-data-{user_id}.json
+ 
+        **GDPR Compliance:**
+        - Article 20: Right to data portability
+        - Complete data export in machine-readable format
+ 
+        **Permissions:** Authenticated users only
+        """,
+        responses={
+            200: {
+                'description': 'JSON file download',
+                'content': {
+                    'application/json': {
+                        'schema': {'type': 'object'}
+                    }
+                }
+            }
+        },
+        tags=['Users']
+    )
     @action(detail=False, methods=['get'])
     def export_data(self, request):
         """
@@ -184,6 +456,34 @@ class UserViewSet(viewsets.ModelViewSet):
 
         return response
 
+    @extend_schema(
+        summary="Get or update privacy settings",
+        description="""
+        Manage user privacy preferences.
+ 
+        **Privacy Options:**
+        - Email notifications (orders, promotions, newsletters)
+        - Profile visibility
+        - Data sharing preferences
+        - Marketing communications
+ 
+        **GET:** Retrieve current settings
+        **PATCH:** Update specific settings
+ 
+        **Example Request (PATCH):**
+```json
+        {
+            "email_notifications": true,
+            "marketing_emails": false
+        }
+```
+ 
+        **Permissions:** Authenticated users only
+        """,
+        request=PrivacySettingsSerializer,
+        responses={200: PrivacySettingsSerializer},
+        tags=['Users']
+    )
     @action(detail=False, methods=['get', 'patch'])
     def privacy_settings(self, request):
         """
@@ -212,6 +512,46 @@ class UserViewSet(viewsets.ModelViewSet):
             'settings': serializer.data
         })
 
+    @extend_schema(
+        summary="Logout user",
+        description="""
+        Logout by blacklisting the refresh token.
+ 
+        **Process:**
+        1. Receives refresh token
+        2. Adds token to blacklist
+        3. Prevents future token refresh
+ 
+        **Example Request:**
+```json
+        {
+            "refresh_token": "eyJ0eXAiOiJKV1QiLCJhbGc..."
+        }
+```
+ 
+        **Note:** Access tokens remain valid until expiration. For complete logout, client should delete both tokens.
+ 
+        **Permissions:** Authenticated users only
+        """,
+        request={
+            'application/json': {
+                'type': 'object',
+                'properties': {
+                    'refresh_token': {'type': 'string', 'description': 'JWT refresh token to blacklist'}
+                },
+                'required': ['refresh_token']
+            }
+        },
+        responses={
+            200: {
+                'type': 'object',
+                'properties': {
+                    'message': {'type': 'string'}
+                }
+            }
+        },
+        tags=['Users']
+    )
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
     def logout(self, request):
         """
@@ -245,6 +585,54 @@ class UserViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+    @extend_schema(
+        summary="Delete user account (GDPR Article 17)",
+        description="""
+        Permanently delete user account and all associated data (Right to Erasure).
+ 
+        **Requirements:**
+        - Password confirmation required
+        - No active orders or commitments
+        - Vendors must complete all pending orders first
+ 
+        **Process:**
+        1. Validates password
+        2. Checks for active orders/commitments
+        3. Permanently deletes account and data
+        4. Cascades deletion to related data
+ 
+        **GDPR Compliance:**
+        - Article 17: Right to erasure ("right to be forgotten")
+        - Complete data deletion
+ 
+        **Example Request:**
+```json
+        {
+            "password": "YourPassword123!"
+        }
+```
+ 
+        **Permissions:** Authenticated users only
+        """,
+        request={
+            'application/json': {
+                'type': 'object',
+                'properties': {
+                    'password': {'type': 'string', 'description': 'Current password for confirmation'}
+                },
+                'required': ['password']
+            }
+        },
+        responses={
+            200: {
+                'type': 'object',
+                'properties': {
+                    'message': {'type': 'string'}
+                }
+            }
+        },
+        tags=['Users']
+    )
     @action(detail=False, methods=['post'])
     def delete_account(self, request):
         """
@@ -320,6 +708,86 @@ class UserViewSet(viewsets.ModelViewSet):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@extend_schema_view(
+    list=extend_schema(
+        summary="List user's addresses",
+        description="""
+        Retrieve all delivery addresses for the authenticated user.
+ 
+        **Includes:**
+        - Full address details
+        - Default address indicator
+        - Geocoded location data
+ 
+        **Permissions:** Authenticated users only
+        """,
+        tags=['Addresses']
+    ),
+    retrieve=extend_schema(
+        summary="Get address details",
+        description="""
+        Retrieve detailed information about a specific address.
+ 
+        **Permissions:** Address owner only
+        """,
+        tags=['Addresses']
+    ),
+    create=extend_schema(
+        summary="Create a new address",
+        description="""
+        Add a new delivery address to user's address book.
+ 
+        **Process:**
+        1. Validates UK postcode format
+        2. Geocodes postcode to get coordinates
+        3. Stores address with location data
+        4. Can be set as default address
+ 
+        **Example Request:**
+```json
+        {
+            "label": "Home",
+            "street_address": "123 Main Street",
+            "city": "London",
+            "postcode": "SW1A 1AA",
+            "is_default": true
+        }
+```
+ 
+        **Permissions:** Authenticated users only
+        """,
+        request=AddressSerializer,
+        responses={201: AddressSerializer},
+        tags=['Addresses']
+    ),
+    update=extend_schema(
+        summary="Update address",
+        description="""
+        Update all fields of an address.
+ 
+        **Permissions:** Address owner only
+        """,
+        tags=['Addresses']
+    ),
+    partial_update=extend_schema(
+        summary="Partially update address",
+        description="""
+        Update specific fields of an address.
+ 
+        **Permissions:** Address owner only
+        """,
+        tags=['Addresses']
+    ),
+    destroy=extend_schema(
+        summary="Delete address",
+        description="""
+        Remove an address from the user's address book.
+ 
+        **Permissions:** Address owner only
+        """,
+        tags=['Addresses']
+    ),
+)
 class AddressViewSet(viewsets.ModelViewSet):
     """
     ViewSet for user addresses.
@@ -351,6 +819,25 @@ class AddressViewSet(viewsets.ModelViewSet):
             location=location
         )
 
+    @extend_schema(
+        summary="Set address as default",
+        description="""
+        Mark an address as the default delivery address.
+ 
+        **Process:**
+        1. Unsets current default address (if any)
+        2. Sets this address as default
+        3. Returns updated address
+ 
+        **Use Cases:**
+        - Quick checkout with default address
+        - Primary delivery location
+ 
+        **Permissions:** Address owner only
+        """,
+        responses={200: AddressSerializer},
+        tags=['Addresses']
+    )
     @action(detail=True, methods=['post'])
     def set_default(self, request, pk=None):
         """
@@ -374,6 +861,34 @@ class AddressViewSet(viewsets.ModelViewSet):
             'address': AddressSerializer(address).data
         })
 
+    @extend_schema(
+        summary="Get default address",
+        description="""
+        Retrieve the user's default delivery address.
+ 
+        **Returns:**
+        - Default address if set
+        - First address if no default set
+        - 404 if no addresses exist
+ 
+        **Use Cases:**
+        - Pre-fill checkout forms
+        - Quick order placement
+        - Default delivery selection
+ 
+        **Permissions:** Authenticated users only
+        """,
+        responses={
+            200: AddressSerializer,
+            404: {
+                'type': 'object',
+                'properties': {
+                    'message': {'type': 'string'}
+                }
+            }
+        },
+        tags=['Addresses']
+    )
     @action(detail=False, methods=['get'])
     def default(self, request):
         """
