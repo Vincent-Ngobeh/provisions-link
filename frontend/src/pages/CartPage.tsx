@@ -24,7 +24,7 @@ export default function CartPage() {
   const navigate = useNavigate();
   const { cart, isLoading, updateQuantity, removeItem, clearCart } = useCart();
 
-  // FIX 7: Fetch vendor summary to show minimum order requirements
+ 
   const { data: vendorSummary } = useQuery({
     queryKey: ['cart-summary'],
     queryFn: () => cartApi.getSummary(),
@@ -112,7 +112,6 @@ export default function CartPage() {
 
         {/* Sidebar */}
         <div className="space-y-6">
-          {/* FIX 7: Pass vendor summary to CartSummary */}
           <CartSummary cart={cart} vendorSummary={vendorSummary?.data} />
 
           <div className="space-y-3">
