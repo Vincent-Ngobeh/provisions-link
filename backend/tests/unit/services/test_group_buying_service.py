@@ -318,24 +318,38 @@ class TestGroupBuyingCommitments:
         test_buying_group.save()
 
         # Mock geocoding to return location far outside radius (Sydney, Australia)
+        sydney_point = Point(151.2093, -33.8688, srid=4326)
         mock_location = Mock()
         mock_location.success = True
         mock_location.data = {
             # Sydney, Australia - definitely outside 50km radius from London
-            'point': Point(151.2093, -33.8688, srid=4326)
+            'point': sydney_point
         }
+
+        # Since geography fields may not work correctly in SQLite test environment,
+        # we need to patch the Point.distance method
+        from django.contrib.gis.geos import Point as GEOSPoint
+
+        original_distance = GEOSPoint.distance
+
+        def mock_distance(self, other):
+            # Return 17,000,000 meters (17,000 km) - way more than 50km radius
+            # This simulates the actual geodetic distance from London to Sydney
+            return 17000000
 
         with patch('apps.integrations.services.geocoding_service.GeocodingService.geocode_postcode') as mock_geo:
             mock_geo.return_value = mock_location
 
-            # Act
-            result = group_buying_service.commit_to_group(
-                group_id=test_buying_group.id,
-                buyer=test_user,
-                quantity=5,
-                buyer_postcode='SYD 2000',
-                delivery_address_id=test_address.id
-            )
+            # Patch the Point.distance method
+            with patch.object(GEOSPoint, 'distance', mock_distance):
+                # Act
+                result = group_buying_service.commit_to_group(
+                    group_id=test_buying_group.id,
+                    buyer=test_user,
+                    quantity=5,
+                    buyer_postcode='SYD 2000',
+                    delivery_address_id=test_address.id
+                )
 
         # Assert
         assert result.success is False

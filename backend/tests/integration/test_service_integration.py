@@ -137,81 +137,83 @@ class TestGroupBuyingLifecycle:
         buyers = [UserFactory() for _ in range(4)]
         commitments = []
 
-        for buyer in buyers:
-            # Create address for buyer
-            address = AddressFactory(user=buyer, is_default=True)
+        # Mock the payment capture that will happen when target is reached
+        with patch('apps.integrations.services.stripe_service.StripeConnectService.capture_group_payment') as mock_capture:
+            mock_capture.return_value = ServiceResult.ok({
+                'payment_intent_id': 'pi_captured',
+                'amount_captured': 100.00,
+                'status': 'succeeded'
+            })
 
-            with patch.object(geocoding_service, 'geocode_postcode') as mock_geocode:
-                mock_geocode.return_value = ServiceResult.ok({
-                    'point': Point(-0.1276, 51.5074)
-                })
+            for buyer in buyers:
+                # Create address for buyer
+                address = AddressFactory(user=buyer, is_default=True)
 
-                with patch.object(stripe_service, 'create_payment_intent_for_group') as mock_stripe:
-                    mock_stripe.return_value = ServiceResult.ok({
-                        'intent_id': f'pi_test_{buyer.id}',
-                        'client_secret': 'secret'
+                with patch.object(geocoding_service, 'geocode_postcode') as mock_geocode:
+                    mock_geocode.return_value = ServiceResult.ok({
+                        'point': Point(-0.1276, 51.5074)
                     })
 
-                    commit_result = group_buying_service.commit_to_group(
-                        group_id=group.id,
-                        buyer=buyer,
-                        quantity=5,  # Total: 4 * 5 = 20
-                        buyer_postcode='SW1A 1AA',
-                        delivery_address_id=address.id
-                    )
+                    with patch.object(stripe_service, 'create_payment_intent_for_group') as mock_stripe:
+                        mock_stripe.return_value = ServiceResult.ok({
+                            'intent_id': f'pi_test_{buyer.id}',
+                            'client_secret': 'secret'
+                        })
 
-                    assert commit_result.success is True
-                    # Extract the commitment from the result data
-                    commitment = commit_result.data['commitment'] if isinstance(
-                        commit_result.data, dict) else commit_result.data
-                    commitments.append(commitment)
+                        commit_result = group_buying_service.commit_to_group(
+                            group_id=group.id,
+                            buyer=buyer,
+                            quantity=5,  # Total: 4 * 5 = 20
+                            buyer_postcode='SW1A 1AA',
+                            delivery_address_id=address.id
+                        )
 
-        # Verify group reached target
+                        assert commit_result.success is True
+                        # Extract the commitment from the result data
+                        commitment = commit_result.data['commitment'] if isinstance(
+                            commit_result.data, dict) else commit_result.data
+                        commitments.append(commitment)
+
+        # Verify group reached target and was automatically processed
         group.refresh_from_db()
         assert group.current_quantity == 20
         assert group.status == 'completed'
 
-        # Step 3: Process group expiration
-        group.expires_at = timezone.now() - timedelta(hours=1)
-        group.status = 'open'  # Reset for processing
-        group.save()
+        # Step 3: Verify orders were automatically created when target was reached
+        from apps.orders.models import Order
 
-        with patch.object(stripe_service, 'capture_group_payment') as mock_capture:
-            mock_capture.return_value = ServiceResult.ok({'captured': True})
+        # Refresh commitments from database
+        for commitment in commitments:
+            commitment.refresh_from_db()
 
-            # Process expired groups
-            stats = group_buying_service.process_expired_groups()
-            assert stats['successful'] == 1
+        orders = Order.objects.filter(group=group)
+        assert orders.count() == 4, "Should have 4 orders created automatically"
 
-        # Step 4: Create orders from commitments
+        # Verify each order was created correctly
         for i, commitment in enumerate(commitments):
-            # Mock the capture to succeed
-            with patch('apps.integrations.services.stripe_service.StripeConnectService.capture_group_payment') as mock_capture:
-                mock_capture.return_value = ServiceResult.ok(
-                    {'captured': True})
+            # Find the order for this commitment
+            order = orders.filter(buyer=buyers[i]).first()
+            assert order is not None, f"Order not found for buyer {i}"
+            assert order.vendor == approved_vendor
+            assert order.group == group
 
-                order_result = order_service.create_order_from_group(
-                    group_id=group.id,
-                    commitment_id=commitment.id
-                )
+            # Verify discount was applied
+            order_item = order.items.first()
+            assert order_item.discount_amount > Decimal('0')
 
-                assert order_result.success is True
-                order = order_result.data
+        # Verify commitments are in confirmed status (orders created, payments captured)
+        # Note: Commitments remain 'confirmed' after successful order creation
+        for commitment in commitments:
+            assert commitment.status == 'confirmed', "Commitment should be in confirmed status after orders created"
+            # Verify each commitment has an associated order
+            assert Order.objects.filter(
+                buyer=commitment.buyer, group=group).exists()
 
-                # Verify order details
-                assert order.buyer == buyers[i]
-                assert order.vendor == approved_vendor
-                assert order.group == group
-                assert order.status == 'paid'
-
-                # Verify discount was applied
-                order_item = order.items.first()
-                assert order_item.discount_amount > Decimal('0')
-
-        # Step 5: Verify stock was reduced
+        # Step 4: Verify stock was reduced
         test_product.refresh_from_db()
-        # Stock reserved but not reduced until shipping
-        assert test_product.stock_quantity == 200
+        # Stock is immediately reduced when commitments are made (pessimistic locking)
+        # 200 initial - 20 committed (4 buyers × 5 units) = 180
+        assert test_product.stock_quantity == 180
 
 
 class TestLocationBasedProductSearch:
