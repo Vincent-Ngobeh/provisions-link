@@ -12,6 +12,14 @@ from django.db.models import Q, Sum, Count
 from django.utils import timezone
 from datetime import datetime, timedelta
 
+from drf_spectacular.utils import (
+    extend_schema,
+    extend_schema_view,
+    OpenApiParameter,
+    OpenApiExample
+)
+from drf_spectacular.types import OpenApiTypes as Types
+
 from .models import Order, OrderItem, Cart, CartItem
 from .serializers import (
     OrderListSerializer,
@@ -28,6 +36,134 @@ from apps.products.models import Product
 from apps.vendors.models import Vendor
 
 
+@extend_schema_view(
+    list=extend_schema(
+        summary="List orders",
+        description="""
+        Retrieve orders based on user role and permissions.
+ 
+        **Access Control:**
+        - Buyers: See only their own orders
+        - Vendors: See orders from their vendor account
+        - Staff/Admin: See all orders
+ 
+        **Filtering:**
+        - Filter by order status
+        - Filter by date range (date_from, date_to)
+        - Filter by vendor ID (buyers/staff only)
+ 
+        **Permissions:** Authenticated users only
+        """,
+        parameters=[
+            OpenApiParameter(
+                name='status',
+                type=Types.STR,
+                location=OpenApiParameter.QUERY,
+                description='Filter by order status',
+                examples=[
+                    OpenApiExample('Pending orders', value='pending'),
+                    OpenApiExample('Paid orders', value='paid'),
+                    OpenApiExample('Completed orders', value='completed'),
+                ]
+            ),
+            OpenApiParameter(
+                name='date_from',
+                type=Types.DATE,
+                location=OpenApiParameter.QUERY,
+                description='Filter orders from date (YYYY-MM-DD)'
+            ),
+            OpenApiParameter(
+                name='date_to',
+                type=Types.DATE,
+                location=OpenApiParameter.QUERY,
+                description='Filter orders to date (YYYY-MM-DD)'
+            ),
+            OpenApiParameter(
+                name='vendor',
+                type=Types.INT,
+                location=OpenApiParameter.QUERY,
+                description='Filter by vendor ID'
+            ),
+        ],
+        tags=['Orders']
+    ),
+    retrieve=extend_schema(
+        summary="Get order details",
+        description="""
+        Retrieve detailed information about a specific order.
+ 
+        **Includes:**
+        - All order items with product details
+        - Vendor and buyer information
+        - Delivery address
+        - Payment status and amounts
+        - Order timeline and status history
+ 
+        **Permissions:** Order owner (buyer/vendor) or admin
+        """,
+        tags=['Orders']
+    ),
+    create=extend_schema(
+        summary="Create a new order",
+        description="""
+        Create a new order from buyer to vendor.
+ 
+        **Process:**
+        1. Validates all products belong to same vendor
+        2. Checks product availability and stock
+        3. Validates delivery address
+        4. Calculates totals (subtotal, VAT, delivery fee)
+        5. Creates order with 'pending' status
+        6. Reserves stock
+ 
+        **Example Request:**
+```json
+        {
+            "vendor": 5,
+            "delivery_address": 12,
+            "items": [
+                {"product": 15, "quantity": 3},
+                {"product": 18, "quantity": 2}
+            ],
+            "delivery_notes": "Ring doorbell",
+            "group": 7
+        }
+```
+ 
+        **Permissions:** Authenticated users only
+        """,
+        request=OrderCreateSerializer,
+        responses={201: OrderDetailSerializer},
+        tags=['Orders']
+    ),
+    update=extend_schema(
+        summary="Update order (admin only)",
+        description="""
+        Update order details (admin only).
+ 
+        **Permissions:** Admin/staff only
+        """,
+        tags=['Orders']
+    ),
+    partial_update=extend_schema(
+        summary="Partially update order (admin only)",
+        description="""
+        Partially update order fields (admin only).
+ 
+        **Permissions:** Admin/staff only
+        """,
+        tags=['Orders']
+    ),
+    destroy=extend_schema(
+        summary="Delete order (admin only)",
+        description="""
+        Delete an order (admin only). Consider using cancel instead.
+ 
+        **Permissions:** Admin/staff only
+        """,
+        tags=['Orders']
+    ),
+)
 class OrderViewSet(viewsets.ModelViewSet):
     """
     ViewSet for order operations.
@@ -133,6 +269,43 @@ class OrderViewSet(viewsets.ModelViewSet):
         # Set the created order as the serializer instance
         serializer.instance = result.data
 
+    @extend_schema(
+        summary="Update order status",
+        description="""
+        Update the status of an order through its lifecycle.
+ 
+        **Status Flow:**
+        - pending → paid → processing → shipped → delivered → completed
+        - Any status → cancelled (with restrictions)
+ 
+        **Permission Rules:**
+        - Buyers: Can only cancel pending orders
+        - Vendors: Can update their own orders
+        - Staff/Admin: Can update any order
+ 
+        **Example Request:**
+```json
+        {
+            "status": "shipped",
+            "notes": "Dispatched via Royal Mail"
+        }
+```
+ 
+        **Permissions:** Order owner or admin
+        """,
+        request={
+            'application/json': {
+                'type': 'object',
+                'properties': {
+                    'status': {'type': 'string', 'enum': ['pending', 'paid', 'processing', 'shipped', 'delivered', 'completed', 'cancelled']},
+                    'notes': {'type': 'string', 'description': 'Optional status update notes'}
+                },
+                'required': ['status']
+            }
+        },
+        responses={200: OrderDetailSerializer},
+        tags=['Orders']
+    )
     @action(detail=True, methods=['post'])
     def update_status(self, request, pk=None):
         """
@@ -185,6 +358,48 @@ class OrderViewSet(viewsets.ModelViewSet):
             'error_code': result.error_code
         }, status=status.HTTP_400_BAD_REQUEST)
 
+    @extend_schema(
+        summary="Process payment for an order",
+        description="""
+        Process payment using Stripe payment method.
+ 
+        **Process:**
+        1. Validates order is in 'pending' status
+        2. Creates Stripe payment intent
+        3. Charges payment method
+        4. Updates order status to 'paid'
+        5. Notifies vendor
+ 
+        **Example Request:**
+```json
+        {
+            "payment_method_id": "pm_xxx"
+        }
+```
+ 
+        **Permissions:** Order buyer only
+        """,
+        request={
+            'application/json': {
+                'type': 'object',
+                'properties': {
+                    'payment_method_id': {'type': 'string', 'description': 'Stripe payment method ID'}
+                },
+                'required': ['payment_method_id']
+            }
+        },
+        responses={
+            200: {
+                'type': 'object',
+                'properties': {
+                    'message': {'type': 'string'},
+                    'payment_status': {'type': 'string'},
+                    'order': {'type': 'object'}
+                }
+            }
+        },
+        tags=['Orders']
+    )
     @action(detail=True, methods=['post'])
     def process_payment(self, request, pk=None):
         """
@@ -223,6 +438,44 @@ class OrderViewSet(viewsets.ModelViewSet):
             'error_code': result.error_code
         }, status=status.HTTP_400_BAD_REQUEST)
 
+    @extend_schema(
+        summary="Cancel an order",
+        description="""
+        Cancel an order and process refund if payment was made.
+ 
+        **Cancellation Rules:**
+        - Can only cancel orders in 'pending' or 'paid' status
+        - Orders in 'processing' or later stages require admin approval
+        - Full refund issued for paid orders
+        - Stock is released back to inventory
+ 
+        **Example Request:**
+```json
+        {
+            "reason": "Changed my mind"
+        }
+```
+ 
+        **Permissions:** Order buyer or admin
+        """,
+        request={
+            'application/json': {
+                'type': 'object',
+                'properties': {
+                    'reason': {'type': 'string', 'description': 'Reason for cancellation'}
+                }
+            }
+        },
+        responses={
+            200: {
+                'type': 'object',
+                'properties': {
+                    'message': {'type': 'string'}
+                }
+            }
+        },
+        tags=['Orders']
+    )
     @action(detail=True, methods=['post'])
     def cancel(self, request, pk=None):
         """
@@ -255,6 +508,53 @@ class OrderViewSet(viewsets.ModelViewSet):
             'error_code': result.error_code
         }, status=status.HTTP_400_BAD_REQUEST)
 
+    @extend_schema(
+        summary="Request a refund for an order",
+        description="""
+        Request full or partial refund for a completed order.
+ 
+        **Refund Reasons:**
+        - requested_by_customer: Customer request
+        - duplicate: Duplicate charge
+        - fraudulent: Fraudulent transaction
+ 
+        **Process:**
+        1. Validates order is paid and eligible for refund
+        2. Creates Stripe refund
+        3. Updates order payment status
+        4. Notifies buyer and vendor
+ 
+        **Example Request:**
+```json
+        {
+            "amount": 25.50,
+            "reason": "requested_by_customer"
+        }
+```
+ 
+        **Permissions:** Order buyer or admin
+        """,
+        request={
+            'application/json': {
+                'type': 'object',
+                'properties': {
+                    'amount': {'type': 'number', 'format': 'decimal', 'description': 'Refund amount (optional - full refund if not provided)'},
+                    'reason': {'type': 'string', 'description': 'Refund reason'}
+                }
+            }
+        },
+        responses={
+            200: {
+                'type': 'object',
+                'properties': {
+                    'message': {'type': 'string'},
+                    'refund_id': {'type': 'string'},
+                    'amount': {'type': 'number'}
+                }
+            }
+        },
+        tags=['Orders']
+    )
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
     def request_refund(self, request, pk=None):
         """
@@ -293,6 +593,64 @@ class OrderViewSet(viewsets.ModelViewSet):
             'error_code': result.error_code
         }, status=status.HTTP_400_BAD_REQUEST)
 
+    @extend_schema(
+        summary="Get order analytics",
+        description="""
+        Retrieve order analytics and metrics for reporting.
+ 
+        **Metrics Included:**
+        - Total orders count by status
+        - Revenue totals and trends
+        - Average order value
+        - Top selling products
+        - Order fulfillment rates
+        - Payment success rates
+ 
+        **Access:**
+        - Vendors: See only their own analytics
+        - Staff: See all or filter by vendor
+ 
+        **Query Parameters:**
+        - date_from: Start date (default: 30 days ago)
+        - date_to: End date (default: today)
+        - vendor_id: Filter by vendor (staff only)
+ 
+        **Permissions:** Vendor or admin only
+        """,
+        parameters=[
+            OpenApiParameter(
+                name='date_from',
+                type=Types.DATE,
+                location=OpenApiParameter.QUERY,
+                description='Analytics start date (YYYY-MM-DD)'
+            ),
+            OpenApiParameter(
+                name='date_to',
+                type=Types.DATE,
+                location=OpenApiParameter.QUERY,
+                description='Analytics end date (YYYY-MM-DD)'
+            ),
+            OpenApiParameter(
+                name='vendor_id',
+                type=Types.INT,
+                location=OpenApiParameter.QUERY,
+                description='Filter by vendor ID (staff only)'
+            ),
+        ],
+        responses={
+            200: {
+                'type': 'object',
+                'properties': {
+                    'total_orders': {'type': 'integer'},
+                    'total_revenue': {'type': 'number'},
+                    'average_order_value': {'type': 'number'},
+                    'orders_by_status': {'type': 'object'},
+                    'top_products': {'type': 'array'}
+                }
+            }
+        },
+        tags=['Orders']
+    )
     @action(detail=False, methods=['get'])
     def analytics(self, request):
         """
@@ -338,6 +696,34 @@ class OrderViewSet(viewsets.ModelViewSet):
             'error': result.error
         }, status=status.HTTP_400_BAD_REQUEST)
 
+    @extend_schema(
+        summary="Get pending orders for vendor",
+        description="""
+        Retrieve pending and processing orders requiring vendor attention.
+ 
+        **Filters:**
+        - Orders with status 'paid' or 'processing'
+        - Only for the authenticated vendor
+        - Ordered by creation date
+ 
+        **Use Cases:**
+        - Vendor dashboard
+        - Order fulfillment queue
+        - Urgent action items
+ 
+        **Permissions:** Vendor account required
+        """,
+        responses={
+            200: {
+                'type': 'object',
+                'properties': {
+                    'count': {'type': 'integer'},
+                    'orders': {'type': 'array'}
+                }
+            }
+        },
+        tags=['Orders']
+    )
     @action(detail=False, methods=['get'])
     def pending_orders(self, request):
         """
@@ -361,6 +747,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         })
 
 
+@extend_schema(tags=['Cart'])
 class CartViewSet(viewsets.ViewSet):
     """
     ViewSet for shopping cart operations.
@@ -373,6 +760,23 @@ class CartViewSet(viewsets.ViewSet):
         cart, created = Cart.objects.get_or_create(user=user)
         return cart
 
+    @extend_schema(
+        summary="Get user's shopping cart",
+        description="""
+        Retrieve the authenticated user's shopping cart with all items.
+ 
+        **Includes:**
+        - All cart items with product details
+        - Individual item subtotals and VAT
+        - Cart total with VAT
+        - Items count
+        - Organized by vendor
+ 
+        **Permissions:** Authenticated users only
+        """,
+        responses={200: CartSerializer},
+        tags=['Cart']
+    )
     def list(self, request):
         """
         Get user's cart with all items.
@@ -382,6 +786,50 @@ class CartViewSet(viewsets.ViewSet):
         serializer = CartSerializer(cart)
         return Response(serializer.data)
 
+    @extend_schema(
+        summary="Add item to cart",
+        description="""
+        Add a product to cart or update quantity if it already exists.
+ 
+        **Process:**
+        1. Validates product exists and is available
+        2. Checks stock availability
+        3. If item exists in cart, increases quantity
+        4. If new item, adds to cart
+        5. Returns updated cart item
+ 
+        **Example Request:**
+```json
+        {
+            "product_id": 15,
+            "quantity": 2
+        }
+```
+ 
+        **Permissions:** Authenticated users only
+        """,
+        request={
+            'application/json': {
+                'type': 'object',
+                'properties': {
+                    'product_id': {'type': 'integer', 'description': 'Product ID to add'},
+                    'quantity': {'type': 'integer', 'description': 'Quantity to add'}
+                },
+                'required': ['product_id', 'quantity']
+            }
+        },
+        responses={
+            201: {
+                'type': 'object',
+                'properties': {
+                    'message': {'type': 'string'},
+                    'item': {'type': 'object'},
+                    'cart_items_count': {'type': 'integer'}
+                }
+            }
+        },
+        tags=['Cart']
+    )
     @action(detail=False, methods=['post'])
     def add_item(self, request):
         """
@@ -433,6 +881,47 @@ class CartViewSet(viewsets.ViewSet):
             'cart_items_count': cart.items_count
         }, status=status.HTTP_201_CREATED)
 
+    @extend_schema(
+        summary="Update cart item quantity",
+        description="""
+        Update the quantity of an existing cart item.
+ 
+        **Validation:**
+        - Validates item belongs to user's cart
+        - Checks new quantity against stock availability
+        - Prevents quantity below 1
+ 
+        **Example Request:**
+```json
+        {
+            "item_id": 23,
+            "quantity": 5
+        }
+```
+ 
+        **Permissions:** Authenticated users only
+        """,
+        request={
+            'application/json': {
+                'type': 'object',
+                'properties': {
+                    'item_id': {'type': 'integer', 'description': 'Cart item ID'},
+                    'quantity': {'type': 'integer', 'description': 'New quantity'}
+                },
+                'required': ['item_id', 'quantity']
+            }
+        },
+        responses={
+            200: {
+                'type': 'object',
+                'properties': {
+                    'message': {'type': 'string'},
+                    'item': {'type': 'object'}
+                }
+            }
+        },
+        tags=['Cart']
+    )
     @action(detail=False, methods=['patch'])
     def update_item(self, request):
         """
@@ -468,6 +957,41 @@ class CartViewSet(viewsets.ViewSet):
             'item': CartItemSerializer(item).data
         })
 
+    @extend_schema(
+        summary="Remove item from cart",
+        description="""
+        Remove a specific item from the shopping cart.
+ 
+        **Query Parameters:**
+        - item_id: Cart item ID to remove
+ 
+        **Example Request:**
+```
+        DELETE /api/v1/cart/remove_item/?item_id=23
+```
+ 
+        **Permissions:** Authenticated users only
+        """,
+        parameters=[
+            OpenApiParameter(
+                name='item_id',
+                type=Types.INT,
+                location=OpenApiParameter.QUERY,
+                required=True,
+                description='Cart item ID to remove'
+            ),
+        ],
+        responses={
+            200: {
+                'type': 'object',
+                'properties': {
+                    'message': {'type': 'string'},
+                    'cart_items_count': {'type': 'integer'}
+                }
+            }
+        },
+        tags=['Cart']
+    )
     @action(detail=False, methods=['delete'])
     def remove_item(self, request):
         """
@@ -496,6 +1020,28 @@ class CartViewSet(viewsets.ViewSet):
                 'error': 'Cart item not found'
             }, status=status.HTTP_404_NOT_FOUND)
 
+    @extend_schema(
+        summary="Clear all items from cart",
+        description="""
+        Remove all items from the shopping cart.
+ 
+        **Use Cases:**
+        - Start fresh shopping session
+        - Clear after checkout
+        - Remove all items at once
+ 
+        **Permissions:** Authenticated users only
+        """,
+        responses={
+            200: {
+                'type': 'object',
+                'properties': {
+                    'message': {'type': 'string'}
+                }
+            }
+        },
+        tags=['Cart']
+    )
     @action(detail=False, methods=['delete'])
     def clear(self, request):
         """
@@ -515,6 +1061,65 @@ class CartViewSet(viewsets.ViewSet):
                 'message': 'Cart is already empty'
             })
 
+    @extend_schema(
+        summary="Checkout cart and create orders",
+        description="""
+        Convert cart items into orders. Creates one order per vendor.
+ 
+        **Process:**
+        1. Validates all items in stock
+        2. Groups items by vendor
+        3. Creates separate order for each vendor
+        4. Validates minimum order values
+        5. Reserves stock
+        6. Clears cart items after successful orders
+        7. Returns created orders
+ 
+        **Important:**
+        - Creates multiple orders if items from different vendors
+        - Each order requires separate payment
+        - Partial success possible (some orders created, others failed)
+ 
+        **Example Request:**
+```json
+        {
+            "delivery_address_id": 12,
+            "delivery_notes": "Ring doorbell"
+        }
+```
+ 
+        **Example Response:**
+```json
+        {
+            "message": "Created 2 order(s)",
+            "orders": [
+                {
+                    "order_id": 45,
+                    "reference_number": "ORD-2024-001",
+                    "vendor_name": "Farm Fresh",
+                    "total": "45.50",
+                    "items_count": 3
+                }
+            ],
+            "failed_vendors": []
+        }
+```
+ 
+        **Permissions:** Authenticated users only
+        """,
+        request=CheckoutSerializer,
+        responses={
+            201: {
+                'type': 'object',
+                'properties': {
+                    'message': {'type': 'string'},
+                    'orders': {'type': 'array'},
+                    'failed_vendors': {'type': 'array'}
+                }
+            }
+        },
+        tags=['Cart']
+    )
     @action(detail=False, methods=['post'])
     def checkout(self, request):
         """
@@ -611,6 +1216,38 @@ class CartViewSet(viewsets.ViewSet):
                 'failed_vendors': failed_vendors
             }, status=status.HTTP_400_BAD_REQUEST)
 
+    @extend_schema(
+        summary="Get cart summary grouped by vendor",
+        description="""
+        Retrieve cart summary with items organized by vendor.
+ 
+        **Includes per vendor:**
+        - Items count
+        - Subtotal, VAT, and total
+        - Minimum order value
+        - Whether minimum is met
+        - List of items
+ 
+        **Use Cases:**
+        - Checkout preview
+        - Show order separation
+        - Validate minimum order values
+        - Display cost breakdown
+ 
+        **Permissions:** Authenticated users only
+        """,
+        responses={
+            200: {
+                'type': 'object',
+                'properties': {
+                    'vendors': {'type': 'array'},
+                    'total_vendors': {'type': 'integer'},
+                    'grand_total': {'type': 'string'}
+                }
+            }
+        },
+        tags=['Cart']
+    )
     @action(detail=False, methods=['get'])
     def summary(self, request):
         """
