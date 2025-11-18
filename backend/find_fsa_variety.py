@@ -1,7 +1,6 @@
 """
-FSA Establishment ID Finder - WITH RATING VARIETY
+FSA Establishment ID Finder - Rating Variety Search
 Searches for establishments with 3★, 4★, and 5★ ratings
-This provides realistic data for portfolio demonstration
 """
 import requests
 import csv
@@ -46,7 +45,6 @@ def categorize_by_rating(data):
     for est in data['establishments']:
         rating = est.get('RatingValue', '')
 
-        # Only include numeric ratings 3-5
         if rating in ['3', '4', '5']:
             by_rating[rating].append({
                 'fsa_id': est.get('FHRSID'),
@@ -60,7 +58,6 @@ def categorize_by_rating(data):
                 'scheme_type': est.get('SchemeType', '')
             })
 
-    # Sort each rating group by date (newest first)
     for rating in by_rating:
         by_rating[rating].sort(key=lambda x: x['rating_date'], reverse=True)
 
@@ -83,25 +80,12 @@ def export_variety_results(all_results, filename='fsa_variety_results.txt'):
     try:
         with open(filename, 'w', encoding='utf-8') as f:
             f.write("=" * 80 + "\n")
-            f.write("FSA ESTABLISHMENT FINDER - RATING VARIETY FOR PORTFOLIO\n")
+            f.write("FSA ESTABLISHMENT FINDER - RATING VARIETY\n")
             f.write("=" * 80 + "\n")
             f.write(
                 f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             f.write("=" * 80 + "\n\n")
 
-            f.write("*** WHY VARIETY MATTERS FOR PORTFOLIO ***\n")
-            f.write("-" * 80 + "\n")
-            f.write("Having different ratings (3★, 4★, 5★) demonstrates:\n")
-            f.write("  ✅ Real-world integration (not cherry-picked data)\n")
-            f.write("  ✅ Handling of all scenarios (not just happy path)\n")
-            f.write("  ✅ Professional approach (shows you handle edge cases)\n")
-            f.write("  ✅ More impressive to recruiters (realistic data)\n\n")
-
-            f.write("=" * 80 + "\n")
-            f.write("RECOMMENDED VENDOR SETUP (Mix of ratings)\n")
-            f.write("=" * 80 + "\n\n")
-
-            # Create recommendations for each area with variety
             vendor_configs = [
                 ('Borough Market Organics', 'SE1', '5'),
                 ('Smithfield Premium Meats', 'EC1', '5'),
@@ -124,9 +108,8 @@ def export_variety_results(all_results, filename='fsa_variety_results.txt'):
                     f.write(f"'fsa_rating_date': None,\n")
                     f.write(f"'fsa_last_checked': None,\n")
                     f.write(f"'fsa_verified': False,\n")
-                    f.write(f"# Status: Shows pending verification state\n\n")
+                    f.write(f"# Status: Pending verification\n\n")
                 else:
-                    # Find best match for this rating in results
                     area_results = all_results.get(postcode, {})
                     establishments = area_results.get(target_rating, [])
 
@@ -142,7 +125,7 @@ def export_variety_results(all_results, filename='fsa_variety_results.txt'):
                         f.write(f"'fsa_last_checked': None,\n")
                         f.write(
                             f"'fsa_verified': False,  # Will become True after verification\n")
-                        f.write(f"# Real business: {best['business_name']}\n")
+                        f.write(f"# Business: {best['business_name']}\n")
                         f.write(f"# Type: {best['business_type']}\n")
                         f.write(f"# Postcode: {best['postcode']}\n\n")
                     else:
@@ -181,29 +164,6 @@ def export_variety_results(all_results, filename='fsa_variety_results.txt'):
                         f.write("-" * 80 + "\n")
                         f.write(f"   None found in {postcode}\n")
 
-            f.write("\n\n" + "=" * 80 + "\n")
-            f.write("PORTFOLIO PRESENTATION TIPS\n")
-            f.write("=" * 80 + "\n")
-            f.write("When showing this to recruiters:\n\n")
-            f.write("1. Highlight the variety:\n")
-            f.write(
-                "   'Notice I have vendors with different FSA ratings - this shows\n")
-            f.write(
-                "    the platform handles all scenarios, not just perfect ones.'\n\n")
-            f.write("2. Explain the pending states:\n")
-            f.write(
-                "   'Some vendors show pending verification - this demonstrates\n")
-            f.write("    proper null state handling and user onboarding flow.'\n\n")
-            f.write("3. Show the verification:\n")
-            f.write(
-                "   'All FSA IDs are real from the UK government API. Watch what\n")
-            f.write("    happens when I click Verify FSA Rating...'\n\n")
-            f.write("4. Mention automation:\n")
-            f.write(
-                "   'These ratings update automatically weekly via Celery tasks,\n")
-            f.write("    keeping data fresh without manual intervention.'\n\n")
-            f.write("=" * 80 + "\n")
-
         print(f"   ✓ TXT file created: {filename}")
         return True
     except Exception as e:
@@ -214,12 +174,10 @@ def export_variety_results(all_results, filename='fsa_variety_results.txt'):
 def main():
     """Main function to search for variety of FSA ratings."""
     print("\n" + "=" * 80)
-    print("FSA FINDER - WITH RATING VARIETY FOR PORTFOLIO")
+    print("FSA FINDER - RATING VARIETY SEARCH")
     print("=" * 80)
-    print("Searching for 3★, 4★, and 5★ establishments across London")
-    print("This provides realistic variety for impressive portfolio demo\n")
+    print("Searching for 3★, 4★, and 5★ establishments across London\n")
 
-    # Search multiple postcode areas
     postcode_areas = ['SE1', 'EC1', 'E1', 'WC2', 'E2', 'E8', 'SE10', 'SW9']
 
     all_results = {}
@@ -236,7 +194,6 @@ def main():
         else:
             print(f"   ✗ No suitable establishments found")
 
-    # Export results
     if all_results:
         print("\n" + "=" * 80)
         print("EXPORTING RESULTS")
@@ -249,12 +206,10 @@ def main():
             print("✓ SUCCESS!")
             print("=" * 80)
             print("\nFile created: fsa_variety_results.txt")
-            print("\n💡 Open fsa_variety_results.txt to see:")
-            print("   • Recommended vendor configuration with rating variety")
+            print("\nContents:")
+            print("   • Vendor configuration with rating variety")
             print("   • Copy-paste ready code for seed_vendors.py")
             print("   • All establishments organized by rating")
-            print("   • Portfolio presentation tips")
-            print("\n🎯 This mix shows professional, real-world integration!")
         else:
             print("\n✗ Failed to export results")
     else:
