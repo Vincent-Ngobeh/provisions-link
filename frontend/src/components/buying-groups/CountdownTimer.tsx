@@ -1,5 +1,5 @@
 // frontend/src/components/buying-groups/CountdownTimer.tsx
-// FIXED: Countdown interval now properly restarts when WebSocket updates arrive
+// Countdown interval restarts when WebSocket updates arrive
 
 import { useEffect, useState, useRef } from 'react';
 import { Clock, AlertCircle } from 'lucide-react';
@@ -52,7 +52,7 @@ export function CountdownTimer({
   }, [expiresAt, timeRemainingSeconds]);
 
   // EFFECT 2: Countdown interval that RESTARTS when timeLeft changes
-  // KEY FIX: This effect now depends on timeLeft, so it restarts the interval
+  // This effect now depends on timeLeft, so it restarts the interval
   // whenever WebSocket updates arrive
   useEffect(() => {
     // Clear any existing interval to prevent multiple intervals running
@@ -89,7 +89,7 @@ export function CountdownTimer({
         intervalRef.current = null;
       }
     };
-  }, [timeLeft]); // ✅ FIXED: Restart interval when timeLeft updates from WebSocket
+  }, [timeLeft]); // Restart interval when timeLeft updates from WebSocket
 
   // Format time remaining
   const formatTime = (seconds: number): string => {

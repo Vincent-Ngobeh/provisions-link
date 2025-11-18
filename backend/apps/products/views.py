@@ -131,7 +131,7 @@ class ProductViewSet(viewsets.ModelViewSet):
         if category_id:
             queryset = queryset.filter(category_id=category_id)
 
-        # FIXED: Filter by price range
+        # Filter by price range
         min_price = self.request.query_params.get('min_price')
         if min_price:
             try:

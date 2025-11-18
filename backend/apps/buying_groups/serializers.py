@@ -75,7 +75,6 @@ class BuyingGroupDetailSerializer(serializers.ModelSerializer):
     # This field is added via .annotate(participants_count=Count(...)) in get_queryset()
     # It only counts pending commitments, not all commitments
     participants_count = serializers.IntegerField(read_only=True)
-    # FIX: Add progress_percent field
     progress_percent = serializers.FloatField(read_only=True)
 
     class Meta:
@@ -180,8 +179,6 @@ class BuyingGroupRealtimeSerializer(serializers.ModelSerializer):
     """Lightweight serializer for WebSocket updates"""
     progress_percent = serializers.FloatField(read_only=True)
     time_remaining = serializers.SerializerMethodField()
-    # FIX 5 & 6: Use the annotated participants_count field from the viewset
-    # Don't use commitments.count which counts ALL commitments
     current_participants = serializers.IntegerField(
         source='participants_count', read_only=True
     )

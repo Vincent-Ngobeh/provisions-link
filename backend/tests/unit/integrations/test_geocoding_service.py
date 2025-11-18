@@ -18,7 +18,6 @@ class TestPostcodeGeocoding:
 
     def test_geocode_postcode_success_with_mapbox(self, geocoding_service):
         """Test successful postcode geocoding using Mapbox."""
-        # FIXED: Clear any cached data for this postcode to prevent test pollution
         with patch.object(geocoding_service, '_get_cached_location') as mock_cache:
             mock_cache.return_value = None  # Force cache miss
 
@@ -298,7 +297,6 @@ class TestDistanceCalculations:
         point1 = Point(-0.1276, 51.5074)  # London
         point2 = Point(-0.1376, 51.5174)  # ~1km away
 
-        # Act - FIXED: Removed third parameter 'km'
         distance = geocoding_service.calculate_distance(point1, point2)
 
         # Assert - The actual distance calculation is done by the service
@@ -313,7 +311,6 @@ class TestDistanceCalculations:
         point1 = Point(-0.1276, 51.5074)
         point2 = Point(-0.1376, 51.5174)
 
-        # Act - FIXED: Removed third parameter
         distance = geocoding_service.calculate_distance(point1, point2)
 
         # Assert

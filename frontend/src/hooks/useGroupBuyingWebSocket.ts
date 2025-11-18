@@ -174,7 +174,6 @@ export function useGroupBuyingWebSocket({
     groupBuyingWS.on('commitment_cancelled', handleCommitmentCancelled);
     groupBuyingWS.on('error', handleError);
 
-    // Cleanup
     return () => {
       groupBuyingWS.off('connection_established', handleConnectionEstablished);
       groupBuyingWS.off('subscribed', handleSubscribed);

@@ -86,7 +86,6 @@ export function ProductsPage() {
     return params;
   }, [page, searchQuery, filters, vendorFromUrl]);
 
-  // Check if we need advanced search endpoint
   const needsSearchEndpoint =
     filters.tags.length > 0 ||
     filters.allergenFree.length > 0 ||

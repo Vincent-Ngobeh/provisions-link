@@ -57,7 +57,7 @@ export const authApi = {
     return { data };
   },
 
-  // FIXED: Return type now includes both message and user
+  // Return type includes both message and user
   updateProfile: async (data: Partial<User>): Promise<ApiResponse<{ message: string; user: User }>> => {
     const { data: response } = await apiClient.patch<{ message: string; user: User }>(
       '/users/update_profile/',
@@ -405,7 +405,7 @@ export const ordersApi = {
   },
 };
 
-// Addresses endpoints - FIXED: Changed to PaginatedResponse
+// Addresses endpoints - PaginatedResponse
 export const addressesApi = {
   list: async (): Promise<ApiResponse<PaginatedResponse<Address>>> => {
     const { data } = await apiClient.get<PaginatedResponse<Address>>('/addresses/');
@@ -443,7 +443,7 @@ export const addressesApi = {
   },
 };
 
-// Categories endpoint (for filters) - FIXED: Changed to PaginatedResponse
+// Categories endpoint (for filters) PaginatedResponse
 export const categoriesApi = {
   list: async (params?: { parent?: number | 'null' }): Promise<ApiResponse<PaginatedResponse<any>>> => {
     const { data } = await apiClient.get<PaginatedResponse<any>>('/categories/', { params });
@@ -523,7 +523,7 @@ export const cartApi = {
   },
 };
 
-// Payments endpoints - FIXED: Added correct /api/v1/ prefix
+// Payments endpoints 
 export const paymentsApi = {
   createIntent: async (data: {
     amount: number;

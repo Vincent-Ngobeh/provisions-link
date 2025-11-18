@@ -651,7 +651,6 @@ class StripeConnectService(BaseService):
         Returns:
             ServiceResult indicating success or failure
         """
-        # CRITICAL FIX: Validate payment_intent_id is not empty/None/whitespace
         if not payment_intent_id or not payment_intent_id.strip():
             self.log_warning(
                 "Skipping payment intent cancellation - no intent ID provided",

@@ -56,7 +56,7 @@ class ProductListSerializer(serializers.ModelSerializer):
 
     def get_active_group(self, obj):
         """Return active buying group if exists"""
-        # FIXED: Only show groups that are:
+        # Only show groups that are:
         # 1. Status is 'open' (accepting new commitments)
         # 2. Not expired (expires_at is in the future)
         group = obj.buying_groups.filter(

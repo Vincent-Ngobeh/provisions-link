@@ -117,7 +117,7 @@ export default function OrderDetailPage() {
   };
 
   // Permission checks
-  // Fixed: Simplified permission check - backend ensures vendors only see their own orders
+  // Ensure vendors only see their own orders
   const canUpdateStatus = order && (user?.is_staff || isVendor);
 
   const canCancel =

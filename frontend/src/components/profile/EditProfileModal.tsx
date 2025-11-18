@@ -1,5 +1,4 @@
 // frontend/src/components/profile/EditProfileModal.tsx
-// FIXED: Properly handles response structure from backend
 
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';

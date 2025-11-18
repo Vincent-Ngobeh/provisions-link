@@ -101,7 +101,7 @@ def bulk_update_fsa_ratings():
                 })
 
         result_dict = {
-            'total': total,  # FIXED: Changed from 'total_vendors' to 'total'
+            'total': total,
             'updated': updated,
             'failed': failed,
             'failures': failures
@@ -244,7 +244,7 @@ def calculate_vendor_analytics(vendor_id, period='week'):
             date_to=date_to
         )
 
-        # FIXED: Check if service call was successful and raise exception if not
+        # Check if service call was successful and raise exception if not
         if not result.success:
             raise Exception(result.error)
 
@@ -302,7 +302,7 @@ def update_vendor_commission_rates():
             old_rate = vendor.commission_rate
             new_rate = vendor.commission_rate
 
-            # FIXED: Adjust commission based on performance with correct thresholds
+            # Adjust commission based on performance
             # Top performers: 100+ orders AND 50k+ revenue → 8%
             if successful_count >= 100 and revenue >= Decimal('50000'):
                 new_rate = Decimal('0.08')
