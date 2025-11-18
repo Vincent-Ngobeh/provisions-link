@@ -99,17 +99,13 @@ export function ProductsPage() {
       try {
         if (needsSearchEndpoint) {
           // Use POST search for advanced filters
-          console.log('Sending POST search request with params:', apiParams);
           const response = await productsApi.search(apiParams);
           return response;
         } else {
           // Use GET list for simple filters
-          console.log('Sending GET list request with params:', apiParams);
           return productsApi.list(apiParams);
         }
       } catch (error: any) {
-        console.error('API Error:', error);
-        console.error('Error response:', error.response?.data);
         throw error;
       }
     },

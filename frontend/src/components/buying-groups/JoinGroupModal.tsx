@@ -300,7 +300,7 @@ function JoinGroupForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {/* Group Context Info - MODIFIED */}
+      {/* Group Context Info */}
       <div className="rounded-lg border bg-muted/30 p-4">
         <div className="grid grid-cols-2 gap-3">
           <div className="flex items-start gap-2">
@@ -574,18 +574,13 @@ function InlineAddressForm({
 
   const createAddressMutation = useMutation({
     mutationFn: async (data: any) => {
-      console.log('Creating address with data:', data);
-      
       // Create the address
       const response = await addressesApi.create(data);
-      console.log('Address created:', response.data);
       
       // Validate it's in radius
       let validationFailed = false;
       try {
-        console.log('Validating address distance for group', groupId, 'address', response.data.id);
         const validationResponse = await buyingGroupsApi.validateAddress(groupId, response.data.id);
-        console.log('Validation response:', validationResponse.data);
         
         if (!validationResponse.data.valid) {
           validationFailed = true;
@@ -597,17 +592,14 @@ function InlineAddressForm({
             `Maximum allowed is ${radiusKm}km. Please use an address within the delivery area.`
           );
         }
-        
-        console.log('Address validation passed!');
       } catch (err: any) {
-        console.error('Validation error:', err);
         // Only delete if we haven't already deleted it
         if (!validationFailed) {
           // Validation API call failed - delete the address
           try {
             await addressesApi.delete(response.data.id);
           } catch (deleteErr) {
-            console.error('Error deleting address after validation failure:', deleteErr);
+            // Failed to clean up invalid address
           }
         }
         throw err;
@@ -619,8 +611,6 @@ function InlineAddressForm({
       onSuccess(newAddress);
     },
     onError: (err: any) => {
-      console.error('Address creation error:', err);
-      console.error('Error response:', err.response?.data);
       const message = err.message || err.response?.data?.error || 'Failed to create address';
       setError(message);
     },

@@ -64,16 +64,4 @@ app.conf.beat_schedule = {
             'expires': 600,  # Task expires if not picked up within 10 minutes
         }
     },
-
-
 }
-
-
-@app.task(bind=True, ignore_result=True)
-def debug_task(self):
-    """
-    Debug task for testing Celery configuration.
-    Usage: from provisions_link.celery import debug_task; debug_task.delay()
-    """
-    print(f'Request: {self.request!r}')
-    return f'Debug task executed successfully'

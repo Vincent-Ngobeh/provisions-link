@@ -107,11 +107,9 @@ export function useGroupBuyingWebSocket({
   useEffect(() => {
     if (!groupId || connectionState !== 'connected') return;
 
-    console.log(`[Hook] Subscribing to group ${groupId}`);
     groupBuyingWS.subscribeToGroup(groupId);
 
     return () => {
-      console.log(`[Hook] Unsubscribing from group ${groupId}`);
       groupBuyingWS.unsubscribeFromGroup();
     };
   }, [groupId, connectionState]);
@@ -120,12 +118,11 @@ export function useGroupBuyingWebSocket({
   useEffect(() => {
     // Connection established
     const handleConnectionEstablished = (data: any) => {
-      console.log('[Hook] Connection established:', data);
+      // Connection ready
     };
 
     // Subscribed to group
     const handleSubscribed = (data: any) => {
-      console.log('[Hook] Subscribed to group:', data);
       if (data.current_state) {
         setProgressData(data.current_state);
       }
@@ -133,7 +130,6 @@ export function useGroupBuyingWebSocket({
 
     // Progress update
     const handleProgressUpdate = (data: GroupProgressData) => {
-      console.log('[Hook] Progress update:', data);
       setProgressData(data);
       setLastUpdate({ type: 'progress', data, timestamp: Date.now() });
       progressRef.current?.(data);
@@ -141,35 +137,31 @@ export function useGroupBuyingWebSocket({
 
     // Threshold reached
     const handleThresholdReached = (data: ThresholdReachedData) => {
-      console.log('[Hook] Threshold reached:', data);
       setLastUpdate({ type: 'threshold', data, timestamp: Date.now() });
       thresholdRef.current?.(data);
     };
 
     // Status change
     const handleStatusChange = (data: StatusChangeData) => {
-      console.log('[Hook] Status change:', data);
       setLastUpdate({ type: 'status_change', data, timestamp: Date.now() });
       statusRef.current?.(data);
     };
 
     // New commitment
     const handleNewCommitment = (data: NewCommitmentData) => {
-      console.log('[Hook] New commitment:', data);
       setLastUpdate({ type: 'new_commitment', data, timestamp: Date.now() });
       commitmentRef.current?.(data);
     };
 
     // Commitment cancelled
     const handleCommitmentCancelled = (data: CommitmentCancelledData) => {
-      console.log('[Hook] Commitment cancelled:', data);
       setLastUpdate({ type: 'commitment_cancelled', data, timestamp: Date.now() });
       cancelledRef.current?.(data);
     };
 
     // Error handling
     const handleError = (data: any) => {
-      console.error('[Hook] WebSocket error:', data);
+      // WebSocket error occurred
     };
 
     // Register all handlers

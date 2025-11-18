@@ -55,9 +55,6 @@ export function ProductFilters({ filters, onChange, onClose }: ProductFiltersPro
   // Extract categories from paginated response
   const categories = categoriesData?.data?.results || [];
 
-  console.log('Categories data:', categoriesData);
-  console.log('Categories array:', categories);
-
   const handleCategoryToggle = (categoryId: number) => {
     // Single-select: toggle on/off
     const newCategories = filters.categories.includes(categoryId)
