@@ -12,6 +12,15 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Q, Prefetch
 from django.utils import timezone
 
+from drf_spectacular.utils import (
+    extend_schema,
+    extend_schema_view,
+    OpenApiParameter,
+    OpenApiTypes,
+    OpenApiExample
+)
+from drf_spectacular.types import OpenApiTypes as Types
+
 from apps.core.services.base import ValidationError
 
 from .models import Product, Category, Tag
@@ -34,6 +43,141 @@ class ProductPagination(PageNumberPagination):
     max_page_size = 100
 
 
+@extend_schema_view(
+    list=extend_schema(
+        summary="List all products",
+        description="""
+        Retrieve a paginated list of active products with advanced filtering capabilities.
+ 
+        **Features:**
+        - Full-text search across name, description, and SKU
+        - Filter by vendor, category, price range, and stock status
+        - Sort by price, date, or stock quantity
+        - Only shows products from approved vendors with completed Stripe onboarding
+ 
+        **Permissions:** Public (no authentication required)
+        """,
+        parameters=[
+            OpenApiParameter(
+                name='vendor',
+                type=Types.INT,
+                location=OpenApiParameter.QUERY,
+                description='Filter products by vendor ID'
+            ),
+            OpenApiParameter(
+                name='category',
+                type=Types.INT,
+                location=OpenApiParameter.QUERY,
+                description='Filter products by category ID'
+            ),
+            OpenApiParameter(
+                name='search',
+                type=Types.STR,
+                location=OpenApiParameter.QUERY,
+                description='Search in product name, description, or SKU'
+            ),
+            OpenApiParameter(
+                name='min_price',
+                type=Types.FLOAT,
+                location=OpenApiParameter.QUERY,
+                description='Minimum price filter (in GBP)'
+            ),
+            OpenApiParameter(
+                name='max_price',
+                type=Types.FLOAT,
+                location=OpenApiParameter.QUERY,
+                description='Maximum price filter (in GBP)'
+            ),
+            OpenApiParameter(
+                name='in_stock_only',
+                type=Types.BOOL,
+                location=OpenApiParameter.QUERY,
+                description='Show only products with stock > 0'
+            ),
+            OpenApiParameter(
+                name='ordering',
+                type=Types.STR,
+                location=OpenApiParameter.QUERY,
+                description='Order by: price, -price, created_at, -created_at, stock_quantity',
+                examples=[
+                    OpenApiExample('Newest first', value='-created_at'),
+                    OpenApiExample('Lowest price', value='price'),
+                    OpenApiExample('Highest price', value='-price'),
+                ]
+            ),
+            OpenApiParameter(
+                name='page',
+                type=Types.INT,
+                location=OpenApiParameter.QUERY,
+                description='Page number (default: 1)'
+            ),
+            OpenApiParameter(
+                name='page_size',
+                type=Types.INT,
+                location=OpenApiParameter.QUERY,
+                description='Items per page (default: 20, max: 100)'
+            ),
+        ],
+        tags=['Products']
+    ),
+    retrieve=extend_schema(
+        summary="Get product details",
+        description="""
+        Retrieve detailed information about a specific product.
+ 
+        **Includes:**
+        - Full product details with vendor information
+        - Category and tags
+        - Active buying groups for this product
+        - Stock availability
+ 
+        **Permissions:** Public (no authentication required)
+        """,
+        tags=['Products']
+    ),
+    create=extend_schema(
+        summary="Create a new product",
+        description="""
+        Create a new product listing. Only available to authenticated vendors.
+ 
+        **Requirements:**
+        - Must be authenticated as a vendor
+        - Product will be associated with your vendor account
+        - Can upload images separately using the upload-image endpoint
+ 
+        **Permissions:** Authenticated vendors only
+        """,
+        tags=['Products']
+    ),
+    update=extend_schema(
+        summary="Update a product",
+        description="""
+        Update all fields of an existing product.
+ 
+        **Permissions:** Product owner (vendor) or admin
+        """,
+        tags=['Products']
+    ),
+    partial_update=extend_schema(
+        summary="Partially update a product",
+        description="""
+        Update specific fields of an existing product.
+ 
+        **Permissions:** Product owner (vendor) or admin
+        """,
+        tags=['Products']
+    ),
+    destroy=extend_schema(
+        summary="Delete a product",
+        description="""
+        Soft delete a product by setting is_active=False.
+        The product will no longer appear in public listings but data is retained.
+ 
+        **Permissions:** Product owner (vendor) or admin
+        """,
+        tags=['Products']
+    ),
+)
 class ProductViewSet(viewsets.ModelViewSet):
     """
     ViewSet for product operations.
@@ -186,6 +330,42 @@ class ProductViewSet(viewsets.ModelViewSet):
         instance.save(update_fields=['is_active'])
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+    @extend_schema(
+        summary="Advanced product search",
+        description="""
+        Perform advanced product search with multiple filters and sorting options.
+ 
+        **Search Features:**
+        - Full-text search across name, description, SKU
+        - Filter by category, vendor, tags, price range
+        - Allergen-free filtering
+        - Location-based search (postcode + radius)
+        - FSA rating filtering
+        - Stock availability filtering
+ 
+        **Example Request:**
+```json
+        {
+            "search": "organic bread",
+            "category": 5,
+            "min_price": 2.50,
+            "max_price": 10.00,
+            "in_stock_only": true,
+            "allergen_free": ["gluten", "dairy"],
+            "postcode": "SW1A 1AA",
+            "radius_km": 10,
+            "ordering": "-created_at",
+            "page": 1,
+            "page_size": 20
+        }
+```
+ 
+        **Permissions:** Public (no authentication required)
+        """,
+        request=ProductSearchSerializer,
+        responses={200: ProductListSerializer(many=True)},
+        tags=['Products']
+    )
     @action(detail=False, methods=['post'])
     def search(self, request):
         """
@@ -233,6 +413,40 @@ class ProductViewSet(viewsets.ModelViewSet):
             'error_code': result.error_code
         }, status=status.HTTP_400_BAD_REQUEST)
 
+    @extend_schema(
+        summary="Update product stock",
+        description="""
+        Update the stock quantity for a product.
+ 
+        **Operations:**
+        - `add`: Increase stock (e.g., restocking)
+        - `subtract`: Decrease stock (e.g., manual adjustment)
+        - `set`: Set absolute stock value
+ 
+        **Example Request:**
+```json
+        {
+            "quantity_change": 50,
+            "operation": "add",
+            "reason": "Restock from supplier"
+        }
+```
+ 
+        **Permissions:** Product owner (vendor) or admin
+        """,
+        request={
+            'application/json': {
+                'type': 'object',
+                'properties': {
+                    'quantity_change': {'type': 'integer', 'description': 'Quantity to add/subtract'},
+                    'operation': {'type': 'string', 'enum': ['add', 'subtract', 'set'], 'description': 'Stock operation'},
+                    'reason': {'type': 'string', 'description': 'Reason for stock update'}
+                },
+                'required': ['quantity_change', 'operation']
+            }
+        },
+        tags=['Products']
+    )
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
     def update_stock(self, request, pk=None):
         """
@@ -266,6 +480,39 @@ class ProductViewSet(viewsets.ModelViewSet):
             'error_code': result.error_code
         }, status=status.HTTP_400_BAD_REQUEST)
 
+    @extend_schema(
+        summary="Get low stock products",
+        description="""
+        Retrieve products with low stock levels for inventory management.
+ 
+        **Use Cases:**
+        - Vendor inventory monitoring
+        - Automated restock alerts
+        - Stock management dashboard
+ 
+        **Query Parameters:**
+        - `vendor`: Filter by specific vendor (requires authentication and ownership)
+        - `include_out_of_stock`: Include products with zero stock (default: true)
+ 
+        **Permissions:** Public for general view, but vendor-specific requires authentication
+        """,
+        parameters=[
+            OpenApiParameter(
+                name='vendor',
+                type=Types.INT,
+                location=OpenApiParameter.QUERY,
+                description='Filter by vendor ID (requires vendor ownership or admin)'
+            ),
+            OpenApiParameter(
+                name='include_out_of_stock',
+                type=Types.BOOL,
+                location=OpenApiParameter.QUERY,
+                description='Include products with zero stock (default: true)'
+            ),
+        ],
+        responses={200: ProductListSerializer(many=True)},
+        tags=['Products']
+    )
     @action(detail=False, methods=['get'], url_path='low_stock')
     def low_stock(self, request):
         """
@@ -307,6 +554,48 @@ class ProductViewSet(viewsets.ModelViewSet):
             'error': result.error
         }, status=status.HTTP_400_BAD_REQUEST)
 
+    @extend_schema(
+        summary="Upload product image",
+        description="""
+        Upload a product image to AWS S3 storage.
+ 
+        **Requirements:**
+        - Content-Type: multipart/form-data
+        - Field name: `primary_image`
+        - Max file size: 5MB
+        - Supported formats: JPG, PNG, WebP
+ 
+        **Process:**
+        1. Uploads image to S3 bucket
+        2. Replaces existing image if present
+        3. Returns public S3 URL
+ 
+        **Permissions:** Product owner (vendor) or admin
+        """,
+        request={
+            'multipart/form-data': {
+                'type': 'object',
+                'properties': {
+                    'primary_image': {
+                        'type': 'string',
+                        'format': 'binary',
+                        'description': 'Image file (max 5MB)'
+                    }
+                },
+                'required': ['primary_image']
+            }
+        },
+        responses={
+            200: {
+                'type': 'object',
+                'properties': {
+                    'message': {'type': 'string'},
+                    'image_url': {'type': 'string', 'format': 'uri'}
+                }
+            }
+        },
+        tags=['Products']
+    )
     @action(detail=True, methods=['post'], url_path='upload-image', parser_classes=[MultiPartParser, FormParser])
     def upload_image(self, request, pk=None):
         """
@@ -353,6 +642,24 @@ class ProductViewSet(viewsets.ModelViewSet):
             'image_url': product.primary_image.url
         }, status=status.HTTP_200_OK)
 
+    @extend_schema(
+        summary="Delete product image",
+        description="""
+        Delete the product's image from AWS S3 storage.
+ 
+        **Process:**
+        1. Removes image from S3 bucket
+        2. Clears primary_image field on product
+        3. Returns confirmation
+ 
+        **Permissions:** Product owner (vendor) or admin
+        """,
+        responses={
+            200: {'type': 'object', 'properties': {'message': {'type': 'string'}}},
+            404: {'type': 'object', 'properties': {'error': {'type': 'string'}}}
+        },
+        tags=['Products']
+    )
     @action(detail=True, methods=['delete'], url_path='delete-image')
     def delete_image(self, request, pk=None):
         """
@@ -380,6 +687,33 @@ class ProductViewSet(viewsets.ModelViewSet):
             status=status.HTTP_404_NOT_FOUND
         )
 
+    @extend_schema(
+        summary="Get active buying groups for product",
+        description="""
+        Retrieve all active buying groups associated with this product.
+ 
+        **Returns:**
+        - Product name
+        - List of open buying groups with current progress
+        - Group details (target quantity, discount, expiry, participants)
+ 
+        **Use Case:**
+        - Show available bulk buying opportunities for this product
+        - Allow buyers to join existing groups
+ 
+        **Permissions:** Public (no authentication required)
+        """,
+        responses={
+            200: {
+                'type': 'object',
+                'properties': {
+                    'product': {'type': 'string'},
+                    'active_groups': {'type': 'array'}
+                }
+            }
+        },
+        tags=['Products']
+    )
     @action(detail=True, methods=['get'])
     def group_buying(self, request, pk=None):
         """
@@ -402,6 +736,53 @@ class ProductViewSet(viewsets.ModelViewSet):
         })
 
 
+@extend_schema_view(
+    list=extend_schema(
+        summary="List all product categories",
+        description="""
+        Retrieve all active product categories organized hierarchically.
+ 
+        **Features:**
+        - Hierarchical category structure (parent/child relationships)
+        - Filter by parent category
+        - Ordered by display_order and name
+ 
+        **Use Cases:**
+        - Build category navigation menus
+        - Filter products by category
+        - Display category trees
+ 
+        **Permissions:** Public (no authentication required)
+        """,
+        parameters=[
+            OpenApiParameter(
+                name='parent',
+                type=Types.STR,
+                location=OpenApiParameter.QUERY,
+                description='Filter by parent category ID (use "null" for top-level categories)',
+                examples=[
+                    OpenApiExample('Top-level categories', value='null'),
+                    OpenApiExample('Subcategories of category 5', value='5'),
+                ]
+            ),
+        ],
+        tags=['Categories']
+    ),
+    retrieve=extend_schema(
+        summary="Get category details",
+        description="""
+        Retrieve detailed information about a specific category.
+ 
+        **Includes:**
+        - Category name, description, icon
+        - Parent category information
+        - Display order
+ 
+        **Permissions:** Public (no authentication required)
+        """,
+        tags=['Categories']
+    ),
+)
 class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
     """
     ViewSet for product categories.
@@ -425,6 +806,46 @@ class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
         return queryset.order_by('display_order', 'name')
 
 
+@extend_schema_view(
+    list=extend_schema(
+        summary="List all product tags",
+        description="""
+        Retrieve all product tags for filtering and categorization.
+ 
+        **Tag Types:**
+        - `dietary`: Dietary preferences (vegan, vegetarian, halal, kosher)
+        - `allergen`: Allergen information (gluten, dairy, nuts, etc.)
+        - `quality`: Quality indicators (organic, free-range, local, etc.)
+        - `special`: Special attributes (new, featured, bestseller)
+ 
+        **Use Cases:**
+        - Build tag filter UI
+        - Display product attributes
+        - Search by dietary requirements
+ 
+        **Permissions:** Public (no authentication required)
+        """,
+        parameters=[
+            OpenApiParameter(
+                name='tag_type',
+                type=Types.STR,
+                location=OpenApiParameter.QUERY,
+                description='Filter tags by type',
+                enum=['dietary', 'allergen', 'quality', 'special']
+            ),
+        ],
+        tags=['Tags']
+    ),
+    retrieve=extend_schema(
+        summary="Get tag details",
+        description="""
+        Retrieve detailed information about a specific tag.
+ 
+        **Permissions:** Public (no authentication required)
+        """,
+        tags=['Tags']
+    ),
+)
 class TagViewSet(viewsets.ReadOnlyModelViewSet):
     """
     ViewSet for product tags.
