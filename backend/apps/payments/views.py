@@ -9,6 +9,14 @@ from django.db import transaction
 import stripe
 import logging
 
+from drf_spectacular.utils import (
+    extend_schema,
+    extend_schema_view,
+    OpenApiParameter,
+    OpenApiExample
+)
+from drf_spectacular.types import OpenApiTypes as Types
+
 from apps.orders.models import Order
 from apps.integrations.services.stripe_service import StripeConnectService
 from .serializers import (
@@ -46,6 +54,67 @@ class CreatePaymentIntentView(views.APIView):
     """
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        summary="Create payment intent for orders",
+        description="""
+        Create a Stripe payment intent for one or more orders using Stripe Connect.
+ 
+        **Payment Flow:**
+        1. Validates all orders belong to same vendor
+        2. Calculates total amount including VAT
+        3. Calculates platform commission (on subtotal only)
+        4. Creates Stripe payment intent with Connect split payment
+        5. Returns client_secret for frontend payment confirmation
+ 
+        **Stripe Connect:**
+        - Platform charges full amount to customer
+        - Platform commission automatically deducted
+        - Remainder transferred to vendor's Stripe account
+ 
+        **Example Request:**
+```json
+        {
+            "order_ids": [45, 46, 47]
+        }
+```
+ 
+        **Example Response:**
+```json
+        {
+            "payment_intent_id": "pi_xxx",
+            "client_secret": "pi_xxx_secret_yyy",
+            "amount": 15000,
+            "commission": 500,
+            "vendor_amount": 14500
+        }
+```
+ 
+        **Commission Calculation:**
+        - Applied to subtotal only (not VAT or delivery fees)
+        - Rate set per vendor (typically 10%)
+        - Automatically handled by Stripe Connect
+ 
+        **Permissions:** Authenticated users only (order buyer)
+        """,
+        request={
+            'application/json': {
+                'type': 'object',
+                'properties': {
+                    'order_ids': {
+                        'type': 'array',
+                        'items': {'type': 'integer'},
+                        'description': 'List of order IDs to pay for (must be from same vendor)'
+                    }
+                },
+                'required': ['order_ids']
+            }
+        },
+        responses={
+            200: CreatePaymentIntentSerializer,
+            400: PaymentErrorSerializer
+        },
+        tags=['Payments']
+    )
     def post(self, request):
         """Create payment intent for orders."""
         # Validate request
@@ -236,6 +305,69 @@ class ConfirmPaymentView(views.APIView):
     """
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        summary="Confirm payment after Stripe authorization",
+        description="""
+        Confirm payment completion and update order statuses to 'paid'.
+ 
+        **Process:**
+        1. Retrieves payment intent from Stripe
+        2. Validates payment succeeded
+        3. Updates all associated orders to 'paid' status
+        4. Triggers vendor notifications
+        5. Records payment details on orders
+ 
+        **Important:**
+        - Call this AFTER Stripe confirms payment on frontend
+        - Idempotent - safe to call multiple times
+        - Updates orders atomically (all or none)
+ 
+        **Example Request:**
+```json
+        {
+            "payment_intent_id": "pi_xxx",
+            "order_ids": [45, 46, 47]
+        }
+```
+ 
+        **Example Response:**
+```json
+        {
+            "success": true,
+            "orders_updated": 3,
+            "orders_already_paid": 0,
+            "payment_intent_id": "pi_xxx",
+            "orders": [...]
+        }
+```
+ 
+        **Error Handling:**
+        - Returns 400 if payment not confirmed
+        - Returns 404 if orders not found
+        - Returns 403 if user doesn't own orders
+ 
+        **Permissions:** Authenticated users only (order buyer)
+        """,
+        request={
+            'application/json': {
+                'type': 'object',
+                'properties': {
+                    'payment_intent_id': {'type': 'string', 'description': 'Stripe payment intent ID'},
+                    'order_ids': {
+                        'type': 'array',
+                        'items': {'type': 'integer'},
+                        'description': 'Order IDs being paid'
+                    }
+                },
+                'required': ['payment_intent_id', 'order_ids']
+            }
+        },
+        responses={
+            200: ConfirmPaymentSerializer,
+            400: PaymentErrorSerializer
+        },
+        tags=['Payments']
+    )
     @transaction.atomic
     def post(self, request):
         """Confirm payment and update orders."""
@@ -283,6 +415,59 @@ class PaymentStatusView(views.APIView):
     """
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        summary="Get payment intent status",
+        description="""
+        Retrieve the current status of a Stripe payment intent.
+ 
+        **Payment Statuses:**
+        - `requires_payment_method`: Waiting for payment method
+        - `requires_confirmation`: Ready to be confirmed
+        - `requires_action`: Requires 3D Secure or other action
+        - `processing`: Payment is processing
+        - `succeeded`: Payment completed successfully
+        - `canceled`: Payment was canceled
+        - `requires_capture`: Payment authorized, awaiting capture
+ 
+        **Use Cases:**
+        - Check payment status after user action
+        - Poll for payment completion
+        - Debug payment issues
+        - Display payment history
+ 
+        **Response Example:**
+```json
+        {
+            "payment_intent_id": "pi_xxx",
+            "status": "succeeded",
+            "amount": 15000,
+            "currency": "gbp",
+            "created": "2024-01-15T10:25:00Z",
+            "metadata": {
+                "order_ids": "45,46,47",
+                "vendor_id": "3",
+                "buyer_id": "12"
+            }
+        }
+```
+ 
+        **Permissions:** Authenticated users (payment owner or admin)
+        """,
+        parameters=[
+            OpenApiParameter(
+                name='intent_id',
+                type=Types.STR,
+                location=OpenApiParameter.PATH,
+                description='Stripe payment intent ID (starts with "pi_")'
+            ),
+        ],
+        responses={
+            200: PaymentStatusSerializer,
+            400: PaymentErrorSerializer,
+            404: {'description': 'Payment intent not found'}
+        },
+        tags=['Payments']
+    )
     def get(self, request, intent_id):
         """Get payment intent status from Stripe."""
         # Validate intent_id format
