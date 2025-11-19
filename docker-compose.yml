@@ -1,21 +1,120 @@
-version: "3.8"
+version: '3.8'
 
 services:
-  postgres:
+  db:
     image: postgis/postgis:14-3.2
     environment:
       POSTGRES_DB: provisions_link
       POSTGRES_USER: provisions_user
       POSTGRES_PASSWORD: provisions_pass
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U provisions_user -d provisions_link" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - provisions_network
 
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - provisions_network
+
+  backend:
+    build: . # ← Build from root using /Dockerfile
+    command: sh -c "python manage.py migrate && daphne -b 0.0.0.0 -p 8000 provisions_link.asgi:application"
+    volumes:
+      - ./backend:/app # ← Mount backend code for hot reload
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - ./backend/.env
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: provisions_link
+      DB_USER: provisions_user
+      DB_PASSWORD: provisions_pass
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      DJANGO_SETTINGS_MODULE: provisions_link.settings.development
+    networks:
+      - provisions_network
+
+  celery_worker:
+    build: . # ← Same Dockerfile
+    command: celery -A provisions_link worker -l info
+    user: "1000:1000"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - ./backend/.env
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: provisions_link
+      DB_USER: provisions_user
+      DB_PASSWORD: provisions_pass
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      DJANGO_SETTINGS_MODULE: provisions_link.settings.development
+    networks:
+      - provisions_network
+
+  celery_beat:
+    build: . # ← Same Dockerfile
+    command: celery -A provisions_link beat -l info
+    user: "1000:1000"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - ./backend/.env
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: provisions_link
+      DB_USER: provisions_user
+      DB_PASSWORD: provisions_pass
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      DJANGO_SETTINGS_MODULE: provisions_link.settings.development
+    networks:
+      - provisions_network
 
 volumes:
   postgres_data:
+  redis_data:
+
+
+networks:
+  provisions_network:
+    driver: bridge

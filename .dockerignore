@@ -42,10 +42,27 @@ htmlcov/
 .gitignore
 .gitattributes
 
+# CI/CD
+.github/
+.gitlab-ci.yml
+
 # Documentation
 *.md
 docs/
 
+# Frontend (not needed in backend image)
+frontend/
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Railway/Deployment configs (not needed in image)
+railway.json
+Procfile
+runtime.txt
+
 # Docker
 Dockerfile
+docker-compose*.yml
 .dockerignore

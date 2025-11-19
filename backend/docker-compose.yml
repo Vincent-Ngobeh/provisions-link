@@ -1,14 +1,16 @@
+version: '3.8'
+
 services:
   db:
     image: postgis/postgis:14-3.2
     environment:
       POSTGRES_DB: provisions_link
-      POSTGRES_USER: provisions_user  
+      POSTGRES_USER: provisions_user
       POSTGRES_PASSWORD: provisions_pass
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5433:5432" 
+      - "5433:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U provisions_user -d provisions_link"]
       interval: 5s
@@ -33,10 +35,10 @@ services:
       - provisions_network
 
   backend:
-    build: .
+    build: ./backend             # ← Build from backend directory
     command: sh -c "python manage.py migrate && daphne -b 0.0.0.0 -p 8000 provisions_link.asgi:application"
     volumes:
-      - .:/app
+      - ./backend:/app
     ports:
       - "8000:8000"
     depends_on:
@@ -45,7 +47,7 @@ services:
       redis:
         condition: service_healthy
     env_file:
-      - .env
+      - ./backend/.env
     environment:
       DB_HOST: db
       DB_PORT: 5432
@@ -59,18 +61,18 @@ services:
       - provisions_network
 
   celery_worker:
-    build: .
+    build: ./backend             # ← Same backend Dockerfile
     command: celery -A provisions_link worker -l info
     user: "1000:1000"
     volumes:
-      - .:/app
+      - ./backend:/app
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
     env_file:
-      - .env
+      - ./backend/.env
     environment:
       DB_HOST: db
       DB_PORT: 5432
@@ -84,18 +86,18 @@ services:
       - provisions_network
 
   celery_beat:
-    build: .
+    build: ./backend             # ← Same backend Dockerfile
     command: celery -A provisions_link beat -l info
     user: "1000:1000"
     volumes:
-      - .:/app
+      - ./backend:/app
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
     env_file:
-      - .env
+      - ./backend/.env
     environment:
       DB_HOST: db
       DB_PORT: 5432
