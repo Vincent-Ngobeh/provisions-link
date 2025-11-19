@@ -87,12 +87,14 @@ AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
 AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
 
 # Static files - S3
-AWS_STATIC_BUCKET_NAME = 'provisions-link-static'
+AWS_STATIC_BUCKET_NAME = os.getenv(
+    'AWS_STATIC_BUCKET_NAME', 'provisions-link-static')
 STATICFILES_STORAGE = 'provisions_link.storage_backends.StaticStorage'
 STATIC_URL = f'https://{AWS_STATIC_BUCKET_NAME}.s3.eu-west-2.amazonaws.com/'
 
 # Media files - S3
-AWS_STORAGE_BUCKET_NAME = 'provisions-link-media'
+AWS_STORAGE_BUCKET_NAME = os.getenv(
+    'AWS_STORAGE_BUCKET_NAME', 'provisions-link-media')
 DEFAULT_FILE_STORAGE = 'provisions_link.storage_backends.MediaStorage'
 MEDIA_URL = f'https://{AWS_STORAGE_BUCKET_NAME}.s3.eu-west-2.amazonaws.com/'
 
