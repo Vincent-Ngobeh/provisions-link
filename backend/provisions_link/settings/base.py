@@ -214,6 +214,8 @@ REST_FRAMEWORK = {
         'anon': '100/hour',
         'user': '1000/hour',
     },
+    # Add this line for drf-spectacular
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
 # JWT Authentication configuration

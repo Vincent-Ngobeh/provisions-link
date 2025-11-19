@@ -94,25 +94,7 @@ logger = logging.getLogger(__name__)
             }
         },
         responses={
-            200: {
-                'description': 'Search results',
-                'examples': [
-                    OpenApiExample(
-                        'Success Response',
-                        value={
-                            'establishments': [
-                                {
-                                    'fhrsid': '12345',
-                                    'business_name': 'The Golden Spoon',
-                                    'rating_value': '5',
-                                    'rating_date': '2024-01-15',
-                                    'postcode': 'SW1A 1AA'
-                                }
-                            ]
-                        }
-                    )
-                ]
-            },
+            200: {'description': 'Search results'},
             400: {'description': 'Invalid request or FSA API error'}
         },
         tags=['FSA Integration']
@@ -171,22 +153,7 @@ logger = logging.getLogger(__name__)
             }
         },
         responses={
-            200: {
-                'description': 'Verification completed',
-                'examples': [
-                    OpenApiExample(
-                        'Successful Verification',
-                        value={
-                            'message': 'FSA verification completed',
-                            'rating': {
-                                'rating_value': '5',
-                                'rating_date': '2024-01-15',
-                                'verified_at': '2024-02-20T10:30:00Z'
-                            }
-                        }
-                    )
-                ]
-            },
+            200: {'description': 'Verification completed'},
             400: {'description': 'Invalid request or FSA verification failed'},
             403: {'description': 'Permission denied - not vendor owner'},
             404: {'description': 'Vendor not found'}
@@ -242,24 +209,7 @@ logger = logging.getLogger(__name__)
             ),
         ],
         responses={
-            200: {
-                'description': 'Rating distribution statistics',
-                'examples': [
-                    OpenApiExample(
-                        'Distribution Response',
-                        value={
-                            'postcode_area': 'SW1',
-                            'total_establishments': 234,
-                            'distribution': {
-                                '5': 120,
-                                '4': 65,
-                                '3': 30
-                            },
-                            'average_rating': 4.2
-                        }
-                    )
-                ]
-            },
+            200: {'description': 'Rating distribution statistics'},
             400: {'description': 'Invalid postcode area or FSA API error'}
         },
         tags=['FSA Integration']
@@ -421,29 +371,7 @@ class FSAIntegrationViewSet(viewsets.ViewSet):
             }
         },
         responses={
-            200: {
-                'description': 'Geocoding successful',
-                'examples': [
-                    OpenApiExample(
-                        'Buckingham Palace',
-                        value={
-                            'postcode': 'SW1A 1AA',
-                            'location': {'lat': 51.501009, 'lng': -0.141588},
-                            'area_name': 'Westminster',
-                            'confidence': 100
-                        }
-                    ),
-                    OpenApiExample(
-                        'Tower of London',
-                        value={
-                            'postcode': 'EC3N 4AB',
-                            'location': {'lat': 51.508112, 'lng': -0.075949},
-                            'area_name': 'Tower Hamlets',
-                            'confidence': 100
-                        }
-                    )
-                ]
-            },
+            200: {'description': 'Geocoding successful'},
             400: {'description': 'Invalid postcode or not found'}
         },
         tags=['Geocoding']
@@ -502,20 +430,7 @@ class FSAIntegrationViewSet(viewsets.ViewSet):
             }
         },
         responses={
-            200: {
-                'description': 'Address geocoded successfully',
-                'examples': [
-                    OpenApiExample(
-                        'Full Address',
-                        value={
-                            'address': '10 Downing Street, London',
-                            'postcode': 'SW1A 2AA',
-                            'location': {'lat': 51.503396, 'lng': -0.127764},
-                            'confidence': 95
-                        }
-                    )
-                ]
-            },
+            200: {'description': 'Address geocoded successfully'},
             400: {'description': 'Invalid address or geocoding failed'}
         },
         tags=['Geocoding']
@@ -586,18 +501,7 @@ class FSAIntegrationViewSet(viewsets.ViewSet):
             }
         },
         responses={
-            200: {
-                'description': 'Distance calculated successfully',
-                'examples': [
-                    OpenApiExample(
-                        'Buckingham Palace to Tower of London',
-                        value={
-                            'distance_km': 5.47,
-                            'distance_miles': 3.40
-                        }
-                    )
-                ]
-            },
+            200: {'description': 'Distance calculated successfully'},
             400: {'description': 'Invalid point format'}
         },
         tags=['Geocoding']
@@ -801,33 +705,7 @@ class GeocodingViewSet(viewsets.ViewSet):
         **Permissions:** Vendor owner only (must have vendor account)
         """,
         responses={
-            200: {
-                'description': 'Account status retrieved',
-                'examples': [
-                    OpenApiExample(
-                        'Complete Account',
-                        value={
-                            'account_id': 'acct_xxxxx',
-                            'status': 'complete',
-                            'charges_enabled': True,
-                            'payouts_enabled': True,
-                            'details_submitted': True
-                        }
-                    ),
-                    OpenApiExample(
-                        'Pending Account',
-                        value={
-                            'account_id': 'acct_xxxxx',
-                            'status': 'pending',
-                            'charges_enabled': False,
-                            'payouts_enabled': False,
-                            'requirements': {
-                                'currently_due': ['business_url', 'external_account']
-                            }
-                        }
-                    )
-                ]
-            },
+            200: {'description': 'Account status retrieved'},
             400: {'description': 'Stripe API error'},
             403: {'description': 'Vendor account required'}
         },
@@ -888,30 +766,7 @@ class GeocodingViewSet(viewsets.ViewSet):
         **Permissions:** Vendor owner only (must have vendor account)
         """,
         responses={
-            200: {
-                'description': 'Balance retrieved successfully',
-                'examples': [
-                    OpenApiExample(
-                        'Balance with Available and Pending',
-                        value={
-                            'available': [
-                                {
-                                    'amount': 45000,
-                                    'currency': 'gbp'
-                                }
-                            ],
-                            'pending': [
-                                {
-                                    'amount': 12000,
-                                    'currency': 'gbp'
-                                }
-                            ],
-                            'total_available_gbp': 450.00,
-                            'total_pending_gbp': 120.00
-                        }
-                    )
-                ]
-            },
+            200: {'description': 'Balance retrieved successfully'},
             400: {'description': 'Stripe API error'},
             403: {'description': 'Vendor account required'}
         },
@@ -1071,31 +926,8 @@ class StripeIntegrationViewSet(viewsets.ViewSet):
         }
     },
     responses={
-        200: {
-            'description': 'Event acknowledged and queued for processing',
-            'examples': [
-                OpenApiExample(
-                    'Event Received',
-                    value={
-                        'received': True,
-                        'event_id': 'evt_xxxxx',
-                        'event_type': 'payment_intent.succeeded'
-                    }
-                )
-            ]
-        },
-        400: {
-            'description': 'Invalid signature or malformed payload',
-            'examples': [
-                OpenApiExample(
-                    'Invalid Signature',
-                    value={
-                        'error': 'Invalid signature',
-                        'error_code': 'INVALID_SIGNATURE'
-                    }
-                )
-            ]
-        }
+        200: {'description': 'Event acknowledged and queued for processing'},
+        400: {'description': 'Invalid signature or malformed payload'}
     },
     tags=['Stripe Webhooks (System)'],
     exclude=False
