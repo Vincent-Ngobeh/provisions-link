@@ -5,7 +5,7 @@
     "dockerfilePath": "Dockerfile"
   },
   "deploy": {
-    "startCommand": "daphne -b 0.0.0.0 -p $PORT provisions_link.asgi:application",
+    "startCommand": "daphne -b 0.0.0.0 -p 8000 provisions_link.asgi:application",
     "healthcheckPath": "/",
     "healthcheckTimeout": 100,
     "restartPolicyType": "ON_FAILURE",
