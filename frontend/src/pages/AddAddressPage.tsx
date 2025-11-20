@@ -31,7 +31,7 @@ interface AddressFormData {
 export default function AddAddressPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { register, handleSubmit, formState: { errors }, watch, setValue } = useForm<AddressFormData>({
+  const { register, handleSubmit, formState: { errors }, setValue } = useForm<AddressFormData>({
     defaultValues: {
       address_name: 'home',
       is_default: false,

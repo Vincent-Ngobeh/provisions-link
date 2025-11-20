@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, CreditCard, AlertCircle } from 'lucide-react';
-import type { Stripe, StripeElements } from '@stripe/stripe-js';
+import type { Stripe } from '@stripe/stripe-js';
 
 interface StripeCheckoutFormInnerProps {
   onSuccess: (paymentIntentId: string) => void;

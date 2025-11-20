@@ -517,7 +517,7 @@ export default function BuyingGroupDetailPage() {
           group={group}
           open={showJoinModal}
           onOpenChange={setShowJoinModal}
-          onSuccess={(commitment: GroupCommitment) => {
+          onSuccess={(_commitment: GroupCommitment) => {
             // The my-commitments query is invalidated by the commit mutation,
             // which will automatically trigger a refetch and update userCommitment
           }}

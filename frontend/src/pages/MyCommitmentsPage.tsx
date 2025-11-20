@@ -18,7 +18,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { Users, CheckCircle, XCircle, Clock, Loader2, ExternalLink, ShoppingBag, Sparkles } from 'lucide-react';
+import { CheckCircle, XCircle, Clock, Loader2, ExternalLink, ShoppingBag, Sparkles } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 

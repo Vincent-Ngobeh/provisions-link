@@ -117,7 +117,7 @@ export function useGroupBuyingWebSocket({
   // Setup event handlers
   useEffect(() => {
     // Connection established
-    const handleConnectionEstablished = (data: any) => {
+    const handleConnectionEstablished = (_data: any) => {
       // Connection ready
     };
 
@@ -160,7 +160,7 @@ export function useGroupBuyingWebSocket({
     };
 
     // Error handling
-    const handleError = (data: any) => {
+    const handleError = (_data: any) => {
       // WebSocket error occurred
     };
 
