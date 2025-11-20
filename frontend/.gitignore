@@ -37,3 +37,4 @@ eggs/
 /lib64/
 backend/lib/
 backend/lib64/
+.vercel
