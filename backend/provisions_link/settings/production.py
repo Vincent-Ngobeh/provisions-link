@@ -8,7 +8,7 @@ from .base import *
 logger = logging.getLogger(__name__)
 
 # Security
-DEBUG = False
+DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
 
 # Parse ALLOWED_HOSTS from environment variable
 # Format: comma-separated list of allowed hosts (e.g., "example.com,www.example.com,api.example.com")
