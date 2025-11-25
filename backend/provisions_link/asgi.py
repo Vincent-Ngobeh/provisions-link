@@ -36,6 +36,17 @@ class HealthCheckMiddleware:
         self.app = app
 
     async def __call__(self, scope, receive, send):
+        # Handle lifespan protocol (used by uvicorn for startup/shutdown)
+        if scope["type"] == "lifespan":
+            # Just acknowledge lifespan protocol without doing anything
+            while True:
+                message = await receive()
+                if message["type"] == "lifespan.startup":
+                    await send({"type": "lifespan.startup.complete"})
+                elif message["type"] == "lifespan.shutdown":
+                    await send({"type": "lifespan.shutdown.complete"})
+                    return
+
         if scope["type"] == "http":
             path = scope.get("path", "")
             if path == "/health":
