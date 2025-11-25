@@ -52,18 +52,33 @@ class HealthCheckMiddleware:
                     await send({"type": "lifespan.shutdown.complete"})
                     return
 
-        if scope_type == "http":
-            if path == "/health":
-                await send({
-                    "type": "http.response.start",
-                    "status": 200,
-                    "headers": [[b"content-type", b"text/plain"]],
-                })
-                await send({
-                    "type": "http.response.body",
-                    "body": b"OK",
-                })
-                return
+        # Handle health check
+        if path == "/health":
+            await send({
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [[b"content-type", b"text/plain"]],
+            })
+            await send({
+                "type": "http.response.body",
+                "body": b"OK",
+            })
+            return
+
+        # TEMPORARY: Handle root path directly to test if requests reach ASGI
+        if path == "/" or path == "/favicon.ico":
+            logger.info(f"ASGI: Handling {path} directly for debugging")
+            body = f"ASGI Direct Response - Path: {path}".encode()
+            await send({
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [[b"content-type", b"text/plain"]],
+            })
+            await send({
+                "type": "http.response.body",
+                "body": body,
+            })
+            return
 
         try:
             logger.info(
