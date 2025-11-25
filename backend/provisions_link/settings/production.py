@@ -23,6 +23,7 @@ else:
     ALLOWED_HOSTS = [
         '.railway.app',  # All Railway subdomains
         'provisions-link-production.up.railway.app',
+        'healthcheck.railway.app',
     ]
     logger.info(
         "ALLOWED_HOSTS environment variable not set. "
