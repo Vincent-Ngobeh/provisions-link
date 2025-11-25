@@ -57,14 +57,28 @@ SECURE_HSTS_PRELOAD = True
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 # Channels layer for production
-CHANNEL_LAYERS = {
-    'default': {
-        'BACKEND': 'channels_redis.core.RedisChannelLayer',
-        'CONFIG': {
-            "hosts": [os.environ.get('REDIS_URL', 'redis://localhost:6379')],
+_redis_url = os.environ.get('REDIS_URL')
+if _redis_url:
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels_redis.core.RedisChannelLayer',
+            'CONFIG': {
+                "hosts": [_redis_url],
+            },
         },
-    },
-}
+    }
+else:
+    # Fallback to in-memory channel layer if Redis not configured
+    # Note: This won't work for multi-instance deployments
+    logger.warning(
+        "REDIS_URL not set. Using in-memory channel layer. "
+        "WebSocket features may not work across multiple instances."
+    )
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels.layers.InMemoryChannelLayer',
+        },
+    }
 
 # Parse CORS_ALLOWED_ORIGINS from environment variable
 # Format: comma-separated list of allowed origins (e.g., "https://app.example.com,https://www.example.com")
