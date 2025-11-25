@@ -34,72 +34,85 @@ class HealthCheckMiddleware:
 
     def __init__(self, app):
         self.app = app
+        logger.info("HealthCheckMiddleware initialized")
 
     async def __call__(self, scope, receive, send):
-        # Log ALL incoming scopes for debugging
         scope_type = scope.get("type", "unknown")
         path = scope.get("path", "N/A")
-        logger.info(f"ASGI SCOPE: type={scope_type} path={path}")
 
-        # Handle lifespan protocol (used by uvicorn for startup/shutdown)
+        # Handle lifespan - try to forward to app, but handle if not supported
         if scope_type == "lifespan":
-            # Just acknowledge lifespan protocol without doing anything
-            while True:
-                message = await receive()
-                if message["type"] == "lifespan.startup":
-                    await send({"type": "lifespan.startup.complete"})
-                elif message["type"] == "lifespan.shutdown":
-                    await send({"type": "lifespan.shutdown.complete"})
-                    return
-
-        # Handle health check
-        if path == "/health":
-            await send({
-                "type": "http.response.start",
-                "status": 200,
-                "headers": [[b"content-type", b"text/plain"]],
-            })
-            await send({
-                "type": "http.response.body",
-                "body": b"OK",
-            })
+            logger.info("ASGI: Handling lifespan protocol")
+            try:
+                # Try to forward lifespan to the underlying app
+                await self.app(scope, receive, send)
+            except ValueError as e:
+                # ProtocolTypeRouter doesn't support lifespan, handle it ourselves
+                if "lifespan" in str(e):
+                    logger.info(
+                        "ASGI: App doesn't support lifespan, handling directly")
+                    while True:
+                        message = await receive()
+                        if message["type"] == "lifespan.startup":
+                            await send({"type": "lifespan.startup.complete"})
+                        elif message["type"] == "lifespan.shutdown":
+                            await send({"type": "lifespan.shutdown.complete"})
+                            return
+                else:
+                    raise
             return
 
-        # TEMPORARY: Handle root path directly to test if requests reach ASGI
-        if path == "/" or path == "/favicon.ico":
-            logger.info(f"ASGI: Handling {path} directly for debugging")
-            body = f"ASGI Direct Response - Path: {path}".encode()
-            await send({
-                "type": "http.response.start",
-                "status": 200,
-                "headers": [[b"content-type", b"text/plain"]],
-            })
-            await send({
-                "type": "http.response.body",
-                "body": body,
-            })
-            return
+        # Log all HTTP requests
+        if scope_type == "http":
+            logger.info(f"ASGI: HTTP request received - path={path}")
 
+            # Handle health check directly
+            if path == "/health":
+                await send({
+                    "type": "http.response.start",
+                    "status": 200,
+                    "headers": [[b"content-type", b"text/plain"]],
+                })
+                await send({
+                    "type": "http.response.body",
+                    "body": b"OK",
+                })
+                return
+
+        # Forward all other requests to the app
         try:
-            logger.info(
-                f"ASGI: Forwarding to ProtocolTypeRouter: {scope_type} {path}")
+            logger.info(f"ASGI: Forwarding {scope_type} {path} to app")
             await self.app(scope, receive, send)
-            logger.info(f"ASGI: Completed: {scope_type} {path}")
+            logger.info(f"ASGI: Completed {scope_type} {path}")
         except Exception as e:
             logger.error(
                 f"ASGI: Error processing {scope_type} {path}: {e}", exc_info=True)
-            raise
+            # Return a 500 error response for HTTP requests
+            if scope_type == "http":
+                await send({
+                    "type": "http.response.start",
+                    "status": 500,
+                    "headers": [[b"content-type", b"text/plain"]],
+                })
+                await send({
+                    "type": "http.response.body",
+                    "body": f"Internal Server Error: {str(e)}".encode(),
+                })
+            else:
+                raise
 
 
-application = HealthCheckMiddleware(
-    ProtocolTypeRouter({
-        "http": django_asgi_app,
-        "websocket": AllowedHostsOriginValidator(
-            AuthMiddlewareStack(
-                URLRouter(
-                    routing.websocket_urlpatterns
-                )
+# Create the protocol router
+inner_app = ProtocolTypeRouter({
+    "http": django_asgi_app,
+    "websocket": AllowedHostsOriginValidator(
+        AuthMiddlewareStack(
+            URLRouter(
+                routing.websocket_urlpatterns
             )
-        ),
-    })
-)
+        )
+    ),
+})
+
+# Wrap with health check middleware
+application = HealthCheckMiddleware(inner_app)

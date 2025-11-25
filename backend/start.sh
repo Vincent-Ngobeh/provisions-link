@@ -65,10 +65,17 @@ except Exception as e:
     traceback.print_exc()
 "
 
-echo "Starting uvicorn directly on port ${PORT:-8000}..."
+echo "Starting uvicorn on port ${PORT:-8000}..."
+echo "Binding to 0.0.0.0:${PORT:-8000}"
+
+# Use exec to replace shell with uvicorn process
+# --proxy-headers: Trust X-Forwarded-* headers from Railway's proxy
+# --forwarded-allow-ips='*': Allow forwarded headers from any IP (Railway's internal network)
 exec uvicorn provisions_link.asgi:application \
     --host 0.0.0.0 \
     --port ${PORT:-8000} \
     --workers 1 \
-    --log-level info \
-    --access-log
+    --log-level debug \
+    --access-log \
+    --proxy-headers \
+    --forwarded-allow-ips='*'
