@@ -6,10 +6,14 @@ echo "PORT: $PORT"
 echo "DATABASE_URL set: $([ -n "$DATABASE_URL" ] && echo 'yes' || echo 'no')"
 echo "SECRET_KEY set: $([ -n "$SECRET_KEY" ] && echo 'yes' || echo 'no')"
 echo "REDIS_URL set: $([ -n "$REDIS_URL" ] && echo 'yes' || echo 'no')"
+echo "AWS_ACCESS_KEY_ID set: $([ -n "$AWS_ACCESS_KEY_ID" ] && echo 'yes' || echo 'no')"
 echo "======================"
 
 echo "Running migrations..."
 python manage.py migrate
+
+echo "Collecting static files..."
+python manage.py collectstatic --noinput --clear 2>&1 || echo "Warning: collectstatic had issues but continuing..."
 
 echo "Testing ASGI import..."
 python -c "

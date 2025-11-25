@@ -104,20 +104,34 @@ CORS_ALLOW_CREDENTIALS = True
 AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
 AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
 
-# Static files - S3
-AWS_STATIC_BUCKET_NAME = os.getenv(
-    'AWS_STATIC_BUCKET_NAME', 'provisions-link-static')
-STATICFILES_STORAGE = 'provisions_link.storage_backends.StaticStorage'
-STATIC_URL = f'https://{AWS_STATIC_BUCKET_NAME}.s3.eu-west-2.amazonaws.com/'
-
-# Media files - S3
-AWS_STORAGE_BUCKET_NAME = os.getenv(
-    'AWS_STORAGE_BUCKET_NAME', 'provisions-link-media')
-DEFAULT_FILE_STORAGE = 'provisions_link.storage_backends.MediaStorage'
-MEDIA_URL = f'https://{AWS_STORAGE_BUCKET_NAME}.s3.eu-west-2.amazonaws.com/'
-
-# WhiteNoise for serving static files (fallback)
+# WhiteNoise for serving static files
 MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
+
+# Static files configuration
+if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
+    # Use S3 for static files if AWS is configured
+    AWS_STATIC_BUCKET_NAME = os.getenv(
+        'AWS_STATIC_BUCKET_NAME', 'provisions-link-static')
+    STATICFILES_STORAGE = 'provisions_link.storage_backends.StaticStorage'
+    STATIC_URL = f'https://{AWS_STATIC_BUCKET_NAME}.s3.eu-west-2.amazonaws.com/'
+else:
+    # Use WhiteNoise for static files (no S3)
+    STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+    STATIC_URL = '/static/'
+    logger.info("AWS credentials not set. Using WhiteNoise for static files.")
+
+# Media files configuration
+if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
+    # Use S3 for media files if AWS is configured
+    AWS_STORAGE_BUCKET_NAME = os.getenv(
+        'AWS_STORAGE_BUCKET_NAME', 'provisions-link-media')
+    DEFAULT_FILE_STORAGE = 'provisions_link.storage_backends.MediaStorage'
+    MEDIA_URL = f'https://{AWS_STORAGE_BUCKET_NAME}.s3.eu-west-2.amazonaws.com/'
+else:
+    # Use local storage for media files (no S3)
+    MEDIA_URL = '/media/'
+    MEDIA_ROOT = BASE_DIR / 'media'
+    logger.info("AWS credentials not set. Using local storage for media files.")
 
 # Email configuration
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
