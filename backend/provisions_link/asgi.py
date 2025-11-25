@@ -36,8 +36,13 @@ class HealthCheckMiddleware:
         self.app = app
 
     async def __call__(self, scope, receive, send):
+        # Log ALL incoming scopes for debugging
+        scope_type = scope.get("type", "unknown")
+        path = scope.get("path", "N/A")
+        logger.info(f"ASGI SCOPE: type={scope_type} path={path}")
+
         # Handle lifespan protocol (used by uvicorn for startup/shutdown)
-        if scope["type"] == "lifespan":
+        if scope_type == "lifespan":
             # Just acknowledge lifespan protocol without doing anything
             while True:
                 message = await receive()
@@ -47,8 +52,7 @@ class HealthCheckMiddleware:
                     await send({"type": "lifespan.shutdown.complete"})
                     return
 
-        if scope["type"] == "http":
-            path = scope.get("path", "")
+        if scope_type == "http":
             if path == "/health":
                 await send({
                     "type": "http.response.start",
@@ -60,14 +64,15 @@ class HealthCheckMiddleware:
                     "body": b"OK",
                 })
                 return
-            # Log non-health requests for debugging
-            logger.info(
-                f"ASGI: Passing {scope['type']} request to Django: {path}")
 
         try:
+            logger.info(
+                f"ASGI: Forwarding to ProtocolTypeRouter: {scope_type} {path}")
             await self.app(scope, receive, send)
+            logger.info(f"ASGI: Completed: {scope_type} {path}")
         except Exception as e:
-            logger.error(f"ASGI: Error processing request: {e}", exc_info=True)
+            logger.error(
+                f"ASGI: Error processing {scope_type} {path}: {e}", exc_info=True)
             raise
 
 
