@@ -25,13 +25,40 @@ from channels.security.websocket import AllowedHostsOriginValidator  # noqa: E40
 
 # isort: on
 
-application = ProtocolTypeRouter({
-    "http": django_asgi_app,
-    "websocket": AllowedHostsOriginValidator(
-        AuthMiddlewareStack(
-            URLRouter(
-                routing.websocket_urlpatterns
+
+class HealthCheckMiddleware:
+    """
+    ASGI middleware to handle health checks at the ASGI level,
+    bypassing Django's URL routing for faster, more reliable health checks.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope["path"] == "/health":
+            await send({
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [[b"content-type", b"text/plain"]],
+            })
+            await send({
+                "type": "http.response.body",
+                "body": b"OK",
+            })
+            return
+        await self.app(scope, receive, send)
+
+
+application = HealthCheckMiddleware(
+    ProtocolTypeRouter({
+        "http": django_asgi_app,
+        "websocket": AllowedHostsOriginValidator(
+            AuthMiddlewareStack(
+                URLRouter(
+                    routing.websocket_urlpatterns
+                )
             )
-        )
-    ),
-})
+        ),
+    })
+)
