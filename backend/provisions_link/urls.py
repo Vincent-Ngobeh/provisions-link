@@ -4,10 +4,15 @@ URL Configuration for Provisions Link
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
 from apps.integrations.views import stripe_webhook
 from apps.core.admin_site import custom_admin_site
+
+
+def health_check(request):
+    """Simple health check endpoint that always returns 200"""
+    return HttpResponse("OK", status=200, content_type="text/plain")
 
 
 def home_view(request):
@@ -30,6 +35,7 @@ def home_view(request):
 
 
 urlpatterns = [
+    path('health/', health_check, name='health'),  # Simple health check
     path('', home_view, name='home'),
     path('admin/', custom_admin_site.urls),
 
