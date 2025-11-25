@@ -6,7 +6,7 @@
     "watchPatterns": ["backend/**", "Dockerfile", "railway.json"]
   },
   "deploy": {
-    "startCommand": "python manage.py migrate && echo 'Starting daphne on port:' $PORT && python -c \"import provisions_link.asgi; print('ASGI import OK')\" && daphne -v 2 -b 0.0.0.0 -p ${PORT:-8000} provisions_link.asgi:application",
+    "startCommand": "python manage.py migrate && echo PORT=$PORT && daphne -v 2 -b 0.0.0.0 -p ${PORT:-8000} provisions_link.asgi:application",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10
   }
