@@ -65,17 +65,33 @@ except Exception as e:
     traceback.print_exc()
 "
 
-echo "Starting uvicorn on port ${PORT:-8000}..."
+echo "Starting HTTP server on port ${PORT:-8000}..."
 echo "Binding to 0.0.0.0:${PORT:-8000}"
 
-# Use exec to replace shell with uvicorn process
-# --proxy-headers: Trust X-Forwarded-* headers from Railway's proxy
-# --forwarded-allow-ips='*': Allow forwarded headers from any IP (Railway's internal network)
-exec uvicorn provisions_link.asgi:application \
-    --host 0.0.0.0 \
-    --port ${PORT:-8000} \
-    --workers 1 \
-    --log-level debug \
-    --access-log \
-    --proxy-headers \
-    --forwarded-allow-ips='*'
+# Try Python's simple HTTP server first to test basic connectivity
+python -c "
+import http.server
+import socketserver
+import os
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+PORT = int(os.environ.get('PORT', 8000))
+
+class MyHandler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        print(f'Received GET request: {self.path} from {self.client_address}', flush=True)
+        self.send_response(200)
+        self.send_header('Content-type', 'text/plain')
+        self.end_headers()
+        response = f'Hello from Python HTTP Server!\nPath: {self.path}\nClient: {self.client_address}\n'
+        self.wfile.write(response.encode())
+
+    def log_message(self, format, *args):
+        print(f'HTTP: {args}', flush=True)
+
+print(f'Starting simple HTTP server on 0.0.0.0:{PORT}', flush=True)
+with socketserver.TCPServer(('0.0.0.0', PORT), MyHandler) as httpd:
+    print(f'Server listening on port {PORT}', flush=True)
+    httpd.serve_forever()
+"
