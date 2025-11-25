@@ -11,7 +11,9 @@ import os
 
 from django.core.wsgi import get_wsgi_application
 
+# Default to production for safe deployments - set DJANGO_SETTINGS_MODULE
+# to 'provisions_link.settings.development' for local development
 os.environ.setdefault('DJANGO_SETTINGS_MODULE',
-                      'provisions_link.settings.development')
+                      'provisions_link.settings.production')
 
 application = get_wsgi_application()

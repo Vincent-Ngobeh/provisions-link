@@ -18,13 +18,16 @@ if _allowed_hosts and _allowed_hosts.strip():
     ALLOWED_HOSTS = [host.strip()
                      for host in _allowed_hosts.split(',') if host.strip()]
 else:
-    # SECURITY: If not set, use empty list (blocks all requests - safe default)
-    # Set ALLOWED_HOSTS environment variable in production!
-    ALLOWED_HOSTS = []
-    logger.warning(
-        "ALLOWED_HOSTS environment variable not set! "
-        "All HTTP requests will be blocked. "
-        "Set ALLOWED_HOSTS to a comma-separated list of allowed domains."
+    # Default Railway domain for deployment
+    # Add additional domains via ALLOWED_HOSTS environment variable
+    ALLOWED_HOSTS = [
+        '.railway.app',  # All Railway subdomains
+        'provisions-link-production.up.railway.app',
+    ]
+    logger.info(
+        "ALLOWED_HOSTS environment variable not set. "
+        "Using default Railway domains. "
+        "Set ALLOWED_HOSTS to add custom domains."
     )
 
 # Database - use DATABASE_URL from environment
