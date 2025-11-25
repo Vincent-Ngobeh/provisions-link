@@ -21,9 +21,11 @@ class RequestLoggingMiddleware:
         start_time = time.time()
 
         # Log incoming request
+        # Use META directly to avoid triggering ALLOWED_HOSTS validation
+        host = request.META.get('HTTP_HOST', 'unknown')
         logger.info(
             f"INCOMING REQUEST: {request.method} {request.path} "
-            f"Host: {request.get_host()} "
+            f"Host: {host} "
             f"User-Agent: {request.META.get('HTTP_USER_AGENT', 'unknown')[:50]}"
         )
 
