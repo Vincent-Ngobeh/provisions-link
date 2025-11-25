@@ -65,5 +65,13 @@ except Exception as e:
     traceback.print_exc()
 "
 
-echo "Starting daphne on port ${PORT:-8000}..."
-exec daphne -v 2 -b 0.0.0.0 -p ${PORT:-8000} provisions_link.asgi:application
+echo "Starting gunicorn on port ${PORT:-8000}..."
+exec gunicorn provisions_link.asgi:application \
+    --bind 0.0.0.0:${PORT:-8000} \
+    --workers 2 \
+    --worker-class uvicorn.workers.UvicornWorker \
+    --timeout 120 \
+    --access-logfile - \
+    --error-logfile - \
+    --capture-output \
+    --log-level info
