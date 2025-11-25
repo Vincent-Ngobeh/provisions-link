@@ -1,13 +1,12 @@
 """
 URL Configuration for Provisions Link
 """
-# from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from django.http import JsonResponse
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
-from apps.integrations.views import stripe_webhook  # Add this import
+from apps.integrations.views import stripe_webhook
 from apps.core.admin_site import custom_admin_site
 
 
@@ -45,7 +44,7 @@ urlpatterns = [
          name='redoc'),
 
     # Stripe Webhooks (outside API versioning and auth)
-    path('webhooks/stripe/', stripe_webhook, name='stripe-webhook'),  # Fixed
+    path('webhooks/stripe/', stripe_webhook, name='stripe-webhook'),
 ]
 
 # Serve media files in development
@@ -55,11 +54,12 @@ if settings.DEBUG:
     urlpatterns += static(settings.STATIC_URL,
                           document_root=settings.STATIC_ROOT)
 
-    # Django Debug Toolbar (only if installed)
-    try:
-        import debug_toolbar
-        urlpatterns = [
-            path('__debug__/', include(debug_toolbar.urls)),
-        ] + urlpatterns
-    except ImportError:
-        pass
+    # Django Debug Toolbar (only if installed AND in INSTALLED_APPS)
+    if 'debug_toolbar' in settings.INSTALLED_APPS:
+        try:
+            import debug_toolbar
+            urlpatterns = [
+                path('__debug__/', include(debug_toolbar.urls)),
+            ] + urlpatterns
+        except ImportError:
+            pass
