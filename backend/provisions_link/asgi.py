@@ -4,7 +4,6 @@ ASGI config for provisions_link project.
 
 import os
 
-# CRITICAL: Set Django settings module BEFORE any Django imports
 # Default to production for safe deployments - set DJANGO_SETTINGS_MODULE
 # to 'provisions_link.settings.development' for local development
 os.environ.setdefault('DJANGO_SETTINGS_MODULE',
