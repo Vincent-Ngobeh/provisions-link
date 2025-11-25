@@ -65,13 +65,10 @@ except Exception as e:
     traceback.print_exc()
 "
 
-echo "Starting gunicorn on port ${PORT:-8000}..."
-exec gunicorn provisions_link.asgi:application \
-    --bind 0.0.0.0:${PORT:-8000} \
-    --workers 2 \
-    --worker-class uvicorn.workers.UvicornWorker \
-    --timeout 120 \
-    --access-logfile - \
-    --error-logfile - \
-    --capture-output \
-    --log-level info
+echo "Starting uvicorn directly on port ${PORT:-8000}..."
+exec uvicorn provisions_link.asgi:application \
+    --host 0.0.0.0 \
+    --port ${PORT:-8000} \
+    --workers 1 \
+    --log-level info \
+    --access-log
