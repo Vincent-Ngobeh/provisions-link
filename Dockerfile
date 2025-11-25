@@ -27,6 +27,7 @@ RUN echo "Cache bust: ${CACHEBUST} ${RAILWAY_GIT_COMMIT_SHA}"
 # Copy backend code (this layer will now rebuild when CACHEBUST changes)
 COPY backend/ .
 
+# Make startup script executable
+RUN chmod +x start.sh
 EXPOSE 8000
-
-CMD ["daphne", "-b", "0.0.0.0", "-p", "8000", "provisions_link.asgi:application"]
+CMD ["./start.sh"]
