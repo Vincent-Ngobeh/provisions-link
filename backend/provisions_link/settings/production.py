@@ -7,7 +7,7 @@ from .base import *
 
 logger = logging.getLogger(__name__)
 
-# Security
+# Security - DEBUG defaults to False, can be enabled via environment variable if needed
 DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
 
 # Parse ALLOWED_HOSTS from environment variable
@@ -17,13 +17,16 @@ if _allowed_hosts and _allowed_hosts.strip():
     # Split by comma and remove any whitespace/empty strings
     ALLOWED_HOSTS = [host.strip()
                      for host in _allowed_hosts.split(',') if host.strip()]
+    # Always include Railway health check host
+    if 'healthcheck.railway.app' not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append('healthcheck.railway.app')
 else:
     # Default Railway domain for deployment
     # Add additional domains via ALLOWED_HOSTS environment variable
     ALLOWED_HOSTS = [
         '.railway.app',  # All Railway subdomains
         'provisions-link-production.up.railway.app',
-        'healthcheck.railway.app',
+        'healthcheck.railway.app',  # Railway health checks
     ]
     logger.info(
         "ALLOWED_HOSTS environment variable not set. "
@@ -44,16 +47,20 @@ DATABASES = {
 DATABASES['default']['ENGINE'] = 'django.contrib.gis.db.backends.postgis'
 
 # Security settings
+# Note: SECURE_SSL_REDIRECT is False because Railway handles HTTPS at the proxy level
 # The proxy terminates SSL and forwards requests as HTTP internally
 SECURE_SSL_REDIRECT = False
+
+# Disable APPEND_SLASH to prevent 301 redirects on health check
+# Our URL patterns don't use trailing slashes
+APPEND_SLASH = False
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
-APPEND_SLASH = False
 
-# HSTS settings
+# HSTS settings - let the proxy handle this, or set via headers
 SECURE_HSTS_SECONDS = 31536000  # 1 year
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True
@@ -109,9 +116,6 @@ AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
 
 # WhiteNoise for serving static files
 MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
-
-# Request logging middleware for debugging (add at the very beginning)
-MIDDLEWARE.insert(0, 'provisions_link.middleware.RequestLoggingMiddleware')
 
 # Configure logging to show INFO level messages
 LOGGING = {
