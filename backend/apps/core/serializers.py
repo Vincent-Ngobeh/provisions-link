@@ -20,7 +20,7 @@ class UserPublicSerializer(serializers.ModelSerializer):
 
 
 class AddressSerializer(serializers.ModelSerializer):
-    """Address serializer for delivery locations"""
+    """Address serializer for delivery locations."""
 
     class Meta:
         model = Address
