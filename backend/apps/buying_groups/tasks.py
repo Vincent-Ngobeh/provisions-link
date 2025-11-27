@@ -219,3 +219,84 @@ def cleanup_old_group_updates():
     except Exception as e:
         logger.error(f"Error cleaning up group updates: {str(e)}")
         raise
+
+
+@shared_task(name='refresh_demo_buying_groups')
+def refresh_demo_buying_groups():
+    """
+    Automatically refresh failed demo buying groups.
+    Gives failed groups a "second chance" by resetting them to open status
+    with a new expiry date.
+
+    Only refreshes groups that:
+    - Are demo groups (area_name starts with [DEMO])
+    - Have status='failed' (didn't reach minimum quantity)
+
+    Leaves successful groups alone to complete their natural lifecycle.
+    Runs daily via Celery Beat.
+    """
+    from apps.buying_groups.models import BuyingGroup, GroupCommitment
+    import random
+
+    try:
+        # Find failed demo groups
+        failed_demo_groups = BuyingGroup.objects.filter(
+            area_name__startswith='[DEMO]',
+            status='failed'
+        )
+
+        count = failed_demo_groups.count()
+
+        if count == 0:
+            logger.info("No failed demo groups to refresh")
+            return {
+                'refreshed': 0,
+                'message': 'No failed demo groups found'
+            }
+
+        logger.info(f"Refreshing {count} failed demo groups")
+
+        refreshed_count = 0
+
+        for group in failed_demo_groups:
+            # Random 7-14 days for variety
+            extension_days = random.randint(7, 14)
+            new_expiry = timezone.now() + timedelta(days=extension_days)
+
+            # Reset to 30-50% progress for a fresh start
+            progress_ratio = random.uniform(0.30, 0.50)
+            new_quantity = int(group.target_quantity * progress_ratio)
+
+            # Update the group
+            group.expires_at = new_expiry
+            group.status = 'open'
+            group.current_quantity = new_quantity
+            group.last_update_at = timezone.now()
+            group.save(update_fields=[
+                'expires_at', 'status', 'current_quantity', 'last_update_at'
+            ])
+
+            # Reset cancelled commitments to pending
+            GroupCommitment.objects.filter(
+                group=group,
+                status='cancelled'
+            ).update(status='pending')
+
+            refreshed_count += 1
+
+            logger.info(
+                f"Refreshed group {group.id} ({group.product.name}) - "
+                f"new expiry: {new_expiry.strftime('%Y-%m-%d')}, "
+                f"progress reset to {new_quantity}/{group.target_quantity}"
+            )
+
+        logger.info(f"Successfully refreshed {refreshed_count} demo groups")
+
+        return {
+            'refreshed': refreshed_count,
+            'message': f'Refreshed {refreshed_count} failed demo groups'
+        }
+
+    except Exception as e:
+        logger.error(f"Error refreshing demo groups: {str(e)}")
+        raise

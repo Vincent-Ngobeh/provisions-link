@@ -291,6 +291,10 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'cleanup_old_group_updates',
         'schedule': crontab(hour=3, minute=0, day_of_week=0),  # Sunday 3 AM
     },
+    'refresh-demo-groups-daily': {
+        'task': 'refresh_demo_buying_groups',
+        'schedule': crontab(hour=0, minute=30),  # Daily at 12:30 AM
+    },
 
     # Vendor Tasks
     'update-fsa-ratings-weekly': {
