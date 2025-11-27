@@ -28,7 +28,7 @@ export function ProductCard({ product }: ProductCardProps) {
     try {
       await addToCart(product.id, 1);
     } catch (error) {
-      console.error('Failed to add to cart:', error);
+      console.error('Sorry, failed to add to cart:', error);
     }
   };
 
