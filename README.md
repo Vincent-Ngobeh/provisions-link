@@ -440,6 +440,79 @@ railway run python manage.py seed_vendors
 # ... etc
 ```
 
+### Running Management Commands Against Production
+
+The Railway CLI allows you to run Django management commands against your production database from your local machine. This is useful for seeding data, updating images, or running maintenance tasks.
+
+**Important**: railway shell injects production environment variables (DATABASE_URL, AWS credentials, etc.) into your local terminal session. Commands run locally but connect to production services.
+
+**Setup**:
+
+```bash
+# 1. Install Railway CLI (if not already installed)
+# Windows (PowerShell):
+iwr https://railway.app/install.ps1 -useb | iex
+
+# macOS/Linux:
+curl -fsSL https://railway.app/install.sh | sh
+
+# 2. Login to Railway
+railway login
+
+# 3. Link your project (run from repository root)
+railway link
+# Select the backend service when prompted
+```
+
+**Running Commands**:
+
+```bash
+# Navigate to backend directory (where manage.py is located)
+cd backend
+
+# Start a shell with Railway environment variables
+railway shell
+
+# Now you can run any Django management command
+python manage.py migrate
+python manage.py seed_users
+python manage.py reseed_product_image --product-name "Croissants"
+
+# Exit the Railway shell when done
+exit
+```
+
+**Reseed Product Images (Production)**:
+
+Use these commands to update product images in production with high-quality Unsplash images:
+
+```bash
+# Navigate to backend directory first
+cd backend
+
+# Start Railway shell
+railway shell
+
+# Reseed individual products with optimized search queries:
+python manage.py reseed_product_image --product-name "Pea Shoots" --search-query "fresh pea shoots microgreens green sprouts"
+python manage.py reseed_product_image --product-name "Baby Basil" --search-query "fresh baby basil leaves herb aromatic green"
+python manage.py reseed_product_image --product-name "Microgreens Mix" --search-query "colorful microgreens mix variety fresh"
+python manage.py reseed_product_image --product-name "Japanese Soy Sauce" --search-query "japanese soy sauce bottle shoyu dark"
+python manage.py reseed_product_image --product-name "Extra Virgin Olive Oil" --search-query "extra virgin olive oil bottle golden premium"
+python manage.py reseed_product_image --product-name "Croissants" --search-query "fresh golden croissants french pastry butter flaky"
+python manage.py reseed_product_image --product-name "Baguette Tradition" --search-query "french artisan baguette bread crusty traditional"
+python manage.py reseed_product_image --product-name "Double Cream" --search-query "fresh double cream dairy white pouring"
+python manage.py reseed_product_image --product-name "Farmhouse Cheddar" --search-query "aged cheddar cheese wedge farmhouse english"
+python manage.py reseed_product_image --product-name "Organic Whole Milk" --search-query "organic whole milk bottle fresh dairy"
+python manage.py reseed_product_image --product-name "Baby Leaf Salad Mix" --search-query "baby leaf salad mixed greens fresh bowl"
+python manage.py reseed_product_image --product-name "Tomato Mix" --search-query "heirloom tomatoes variety colorful vine ripe"
+
+# Exit Railway shell
+exit
+```
+
+**Note**: The UNSPLASH_ACCESS_KEY environment variable must be set in Railway for the reseed command to fetch high-quality images. Without it, the command falls back to a less reliable demo endpoint.
+
 ---
 
 ### Frontend (Vercel)
