@@ -108,6 +108,10 @@ else:
         "Set CORS_ALLOWED_ORIGINS to a comma-separated list of allowed origins."
     )
 
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https://provisions-link-frontend(-[a-z0-9]+)?(-[a-z0-9-]+)?\.vercel\.app$",
+]
+
 CORS_ALLOW_CREDENTIALS = True
 
 # AWS S3 Configuration for Production
