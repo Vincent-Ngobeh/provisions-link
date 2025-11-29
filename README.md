@@ -22,13 +22,6 @@ B2B marketplace connecting UK food suppliers with restaurants. Features location
 
 ### Test Credentials
 
-**Super Admin**:
-
-```
-Email: admin@test.com
-Password: SecurePass123!
-```
-
 **Vendor Login**:
 
 ```
@@ -36,18 +29,11 @@ Email: borough.market@vendor.test
 Password: vendor123
 ```
 
-**Buyer Login (Option 1)**:
+**Buyer Login**:
 
 ```
 Email: james.chen@buyer.test
 Password: buyer123
-```
-
-**Buyer Login (Option 2)**:
-
-```
-Email: sarah@gmail.com
-Password: @Diamond67
 ```
 
 ### Stripe Test Cards
