@@ -57,7 +57,7 @@ export default function BuyingGroupDetailPage() {
 
   // Fetch group details
   const { data: groupData, isLoading } = useQuery({
-    queryKey: ['buying-group', id],
+    queryKey: ['buying-group', Number(id)],
     queryFn: () => buyingGroupsApi.get(parseInt(id!)),
     enabled: !!id,
   });
@@ -93,7 +93,7 @@ export default function BuyingGroupDetailPage() {
       });
       
       // Refresh both group data and commitments
-      queryClient.invalidateQueries({ queryKey: ['buying-group', id] });
+      queryClient.invalidateQueries({ queryKey: ['buying-group', Number(id)] });
       queryClient.invalidateQueries({ queryKey: ['my-commitments'] });
     },
     onError: (error: any) => {
