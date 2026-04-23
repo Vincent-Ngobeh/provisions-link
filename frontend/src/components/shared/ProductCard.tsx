@@ -1,12 +1,12 @@
 // frontend/src/components/shared/ProductCard.tsx
-import { Link } from 'react-router-dom';
-import { Card, CardContent, CardFooter } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { ShoppingCart, ArrowRight, Tag, CheckCircle2 } from 'lucide-react';
-import { useCart } from '@/contexts/CartContext';
-import { useAuth } from '@/contexts/AuthContext';
-import type { Product } from '@/types';
+import { Link } from "react-router-dom";
+import { Card, CardContent, CardFooter } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { ShoppingCart, ArrowRight, Tag, CheckCircle2 } from "lucide-react";
+import { useCart } from "@/contexts/CartContext";
+import { useAuth } from "@/contexts/AuthContext";
+import type { Product } from "@/types";
 
 interface ProductCardProps {
   product: Product;
@@ -19,24 +19,25 @@ export function ProductCard({ product }: ProductCardProps) {
   const handleAddToCart = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    
+
     if (!isAuthenticated) {
-      window.location.href = '/login';
+      window.location.href = "/login";
       return;
     }
-    
+
     try {
       await addToCart(product.id, 1);
     } catch (error) {
-      console.error('Failed to add to cart:', error);
+      console.error("Failed to add to cart:", error);
     }
   };
 
   // Check if vendor is verified
-  const isVendorVerified = product.vendor.is_approved && product.vendor.stripe_onboarding_complete;
+  const isVendorVerified =
+    product.vendor.is_approved && product.vendor.stripe_onboarding_complete;
 
   return (
-    <Card className="overflow-hidden hover:shadow-lg transition-shadow flex flex-col h-full">
+    <Card className="overflow-hidden hover:shadow-xl hover:shadow-emerald-100 transition-all duration-300 flex flex-col h-full border-2 border-transparent hover:border-emerald-100">
       <Link to={`/products/${product.id}`} className="block w-full">
         <div className="aspect-[16/10] sm:aspect-square w-full overflow-hidden bg-gray-100">
           {product.primary_image ? (
@@ -81,7 +82,9 @@ export function ProductCard({ product }: ProductCardProps) {
               <span className="text-xl sm:text-2xl font-bold text-primary">
                 £{product.price}
               </span>
-              <span className="text-xs text-muted-foreground">per {product.unit}</span>
+              <span className="text-xs text-muted-foreground">
+                per {product.unit}
+              </span>
             </div>
             {product.stock_quantity === 0 && (
               <Badge variant="destructive" className="text-xs shrink-0">
@@ -108,23 +111,31 @@ export function ProductCard({ product }: ProductCardProps) {
         {/* Group Buy Teaser - now at bottom */}
         {product.active_group && (
           <Link to={`/buying-groups/${product.active_group.id}`}>
-            <div className="p-2 sm:p-3 bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-md hover:shadow-md hover:from-green-100 hover:to-blue-100 transition-all cursor-pointer group">
+            <div className="p-2 sm:p-3 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-lg hover:shadow-md hover:from-emerald-100 hover:to-teal-100 transition-all cursor-pointer group">
               <div className="flex items-start justify-between gap-2">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5 sm:gap-2 mb-1">
-                    <Tag className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-green-700 shrink-0" />
-                    <span className="font-semibold text-green-800 text-xs sm:text-sm">
+                    <Tag className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-emerald-700 shrink-0" />
+                    <span className="font-semibold text-emerald-800 text-xs sm:text-sm">
                       Group Buy Available
                     </span>
                   </div>
-                  <p className="text-xs text-green-700 mb-1">
-                    Save {product.active_group.discount_percent}% when target reached
+                  <p className="text-xs text-emerald-700 mb-1">
+                    Save {product.active_group.discount_percent}% when target
+                    reached
                   </p>
-                  <div className="text-xs text-gray-700">
-                    {product.active_group.current_quantity}/{product.active_group.target_quantity} committed • {Math.round((product.active_group.current_quantity / product.active_group.target_quantity) * 100)}%
+                  <div className="text-xs text-emerald-900/70">
+                    {product.active_group.current_quantity}/
+                    {product.active_group.target_quantity} committed •{" "}
+                    {Math.round(
+                      (product.active_group.current_quantity /
+                        product.active_group.target_quantity) *
+                        100
+                    )}
+                    %
                   </div>
                 </div>
-                <ArrowRight className="h-4 w-4 sm:h-5 sm:w-5 text-green-700 shrink-0 group-hover:translate-x-1 transition-transform" />
+                <ArrowRight className="h-4 w-4 sm:h-5 sm:w-5 text-emerald-700 shrink-0 group-hover:translate-x-1 transition-transform" />
               </div>
             </div>
           </Link>
@@ -146,14 +157,11 @@ export function ProductCard({ product }: ProductCardProps) {
               <span>Add to Cart</span>
             </>
           ) : (
-            'Out of Stock'
+            "Out of Stock"
           )}
         </Button>
-        
-        <Button
-          className="flex-1 h-9 sm:h-10 text-xs sm:text-sm"
-          asChild
-        >
+
+        <Button className="flex-1 h-9 sm:h-10 text-xs sm:text-sm" asChild>
           <Link to={`/products/${product.id}`}>View Details</Link>
         </Button>
       </CardFooter>

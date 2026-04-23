@@ -2,12 +2,12 @@
 
 B2B marketplace connecting UK food suppliers with restaurants. Features location-based group buying, real-time updates via WebSockets, FSA integration, and automated vendor payments through Stripe Connect.
 
-**Author**: Vincent Sam Ngobeh  
+**Author**: Vincent Sam Ngobeh
 **GitHub**: [github.com/Vincent-Ngobeh/provisions-link](https://github.com/Vincent-Ngobeh/provisions-link)
 
 ---
 
-## 🚀 Live Demo
+## Live Demo
 
 ### Production Deployment
 
@@ -46,7 +46,7 @@ Password: buyer123
 
 ---
 
-## ✨ Features
+## Features
 
 - **Location-Based Group Buying**: Restaurants can join buying groups based on proximity to maximize bulk purchase discounts
 - **Real-time Updates**: WebSocket integration for live order updates, group status changes, and notifications
@@ -61,7 +61,7 @@ Password: buyer123
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 ### Backend
 
@@ -90,7 +90,7 @@ Password: buyer123
 
 ---
 
-## 📋 Prerequisites
+## Prerequisites
 
 - **Docker** & **Docker Compose** (recommended for local development)
 - **Python** 3.11+ (if running without Docker)
@@ -102,7 +102,7 @@ Password: buyer123
 
 ---
 
-## 🏃 Local Development Setup
+## Local Development Setup
 
 ### Option 1: Docker Setup (Recommended)
 
@@ -349,7 +349,7 @@ The frontend will be available at `http://localhost:5173`
 
 ---
 
-## 🌐 Deployment
+## Deployment
 
 ### Backend (Railway)
 
@@ -531,7 +531,7 @@ The `frontend/vercel.json` configuration ensures proper SPA routing.
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 provisions-link/
@@ -572,7 +572,7 @@ provisions-link/
 
 ---
 
-## 🧪 Testing
+## Testing
 
 ### Backend Tests
 
@@ -606,7 +606,7 @@ npm run lint
 
 ---
 
-## 📚 API Documentation
+## API Documentation
 
 ### Local Development
 
@@ -622,7 +622,7 @@ npm run lint
 
 ---
 
-## 🔒 Security Features
+## Security Features
 
 - JWT-based authentication with token refresh
 - CORS configuration
@@ -637,7 +637,7 @@ npm run lint
 
 ---
 
-## 🎯 Key Integrations
+## Key Integrations
 
 ### Food Standards Agency (FSA)
 
@@ -665,7 +665,7 @@ npm run lint
 
 ---
 
-## 🐳 Docker Services
+## Docker Services
 
 When running `docker compose up`, the following services start:
 
@@ -679,7 +679,7 @@ When running `docker compose up`, the following services start:
 
 ---
 
-## 🚧 Troubleshooting
+## Troubleshooting
 
 ### Docker Issues
 
@@ -729,28 +729,28 @@ taskkill /PID <PID> /F
 
 ---
 
-## 📝 License
+## License
 
-This project is proprietary software.
+This project is licensed under the [MIT License](LICENSE).
 
 ---
 
-## 👥 Contributing
+## Contributing
 
 This is a portfolio project. For inquiries, please contact Vincent Sam Ngobeh via GitHub.
 
 ---
 
-## 📧 Contact & Support
+## Contact & Support
 
-**Author**: Vincent Sam Ngobeh  
+**Author**: Vincent Sam Ngobeh
 **GitHub**: [github.com/Vincent-Ngobeh/provisions-link](https://github.com/Vincent-Ngobeh/provisions-link)
 
 For issues or questions, please open an issue on GitHub.
 
 ---
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - Built with Django REST Framework and React
 - Deployed on Railway (backend) and Vercel (frontend)

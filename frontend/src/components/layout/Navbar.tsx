@@ -1,8 +1,8 @@
-import { Link } from 'react-router-dom';
-import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { useAuth } from '@/contexts/AuthContext';
-import { useCart } from '@/contexts/CartContext';
+import { Link } from "react-router-dom";
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { useAuth } from "@/contexts/AuthContext";
+import { useCart } from "@/contexts/CartContext";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,15 +10,25 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+} from "@/components/ui/dropdown-menu";
 import {
   Sheet,
   SheetContent,
   SheetHeader,
   SheetTitle,
   SheetTrigger,
-} from '@/components/ui/sheet';
-import { User, LogOut, Settings, Package, Menu, ShoppingBag, Users, Store, ShoppingCart } from 'lucide-react';
+} from "@/components/ui/sheet";
+import {
+  User,
+  LogOut,
+  Settings,
+  Package,
+  Menu,
+  ShoppingBag,
+  Users,
+  Store,
+  ShoppingCart,
+} from "lucide-react";
 
 export function Navbar() {
   const { user, isAuthenticated, isVendor, logout } = useAuth();
@@ -26,7 +36,7 @@ export function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
-    <nav className="border-b">
+    <nav className="border-b bg-white/80 backdrop-blur-md sticky top-0 z-50 shadow-sm">
       <div className="container mx-auto px-4 py-3 md:py-4">
         {/* Mobile Layout */}
         <div className="flex md:hidden items-center justify-between">
@@ -43,19 +53,31 @@ export function Navbar() {
               </SheetHeader>
               <div className="flex flex-col gap-3 mt-6">
                 <Link to="/products" onClick={() => setMobileMenuOpen(false)}>
-                  <Button variant="ghost" className="w-full justify-start text-sm h-10">
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start text-sm h-10"
+                  >
                     <ShoppingBag className="mr-2 h-4 w-4" />
                     Products
                   </Button>
                 </Link>
-                <Link to="/buying-groups" onClick={() => setMobileMenuOpen(false)}>
-                  <Button variant="ghost" className="w-full justify-start text-sm h-10">
+                <Link
+                  to="/buying-groups"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start text-sm h-10"
+                  >
                     <Users className="mr-2 h-4 w-4" />
                     Group Buying
                   </Button>
                 </Link>
                 <Link to="/vendors" onClick={() => setMobileMenuOpen(false)}>
-                  <Button variant="ghost" className="w-full justify-start text-sm h-10">
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start text-sm h-10"
+                  >
                     <Store className="mr-2 h-4 w-4" />
                     Vendors
                   </Button>
@@ -65,21 +87,36 @@ export function Navbar() {
                   <>
                     <div className="border-t my-2" />
                     {isVendor && (
-                      <Link to="/vendors/dashboard" onClick={() => setMobileMenuOpen(false)}>
-                        <Button variant="ghost" className="w-full justify-start text-sm h-10">
+                      <Link
+                        to="/vendors/dashboard"
+                        onClick={() => setMobileMenuOpen(false)}
+                      >
+                        <Button
+                          variant="ghost"
+                          className="w-full justify-start text-sm h-10"
+                        >
                           <Package className="mr-2 h-4 w-4" />
                           Vendor Dashboard
                         </Button>
                       </Link>
                     )}
-                    <Link to="/profile" onClick={() => setMobileMenuOpen(false)}>
-                      <Button variant="ghost" className="w-full justify-start text-sm h-10">
+                    <Link
+                      to="/profile"
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      <Button
+                        variant="ghost"
+                        className="w-full justify-start text-sm h-10"
+                      >
                         <Settings className="mr-2 h-4 w-4" />
                         Profile
                       </Button>
                     </Link>
                     <Link to="/orders" onClick={() => setMobileMenuOpen(false)}>
-                      <Button variant="ghost" className="w-full justify-start text-sm h-10">
+                      <Button
+                        variant="ghost"
+                        className="w-full justify-start text-sm h-10"
+                      >
                         <Package className="mr-2 h-4 w-4" />
                         My Orders
                       </Button>
@@ -102,9 +139,14 @@ export function Navbar() {
                   <>
                     <div className="border-t my-2" />
                     <Link to="/login" onClick={() => setMobileMenuOpen(false)}>
-                      <Button variant="ghost" className="w-full text-sm h-10">Login</Button>
+                      <Button variant="ghost" className="w-full text-sm h-10">
+                        Login
+                      </Button>
                     </Link>
-                    <Link to="/register" onClick={() => setMobileMenuOpen(false)}>
+                    <Link
+                      to="/register"
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
                       <Button className="w-full text-sm h-10">Sign Up</Button>
                     </Link>
                   </>
@@ -114,7 +156,10 @@ export function Navbar() {
           </Sheet>
 
           {/* Center: Logo */}
-          <Link to="/" className="absolute left-1/2 transform -translate-x-1/2 text-lg font-bold">
+          <Link
+            to="/"
+            className="absolute left-1/2 transform -translate-x-1/2 text-lg font-bold bg-gradient-to-r from-emerald-700 to-teal-600 bg-clip-text text-transparent"
+          >
             Provisions Link
           </Link>
 
@@ -159,9 +204,15 @@ export function Navbar() {
         {/* Desktop Layout */}
         <div className="hidden md:flex items-center justify-between relative">
           {/* Left: Logo */}
-          <Link to="/" className="flex items-center gap-2">
-            <img src="/logo.svg" alt="Provisions Link" className="h-10 w-10" />
-            <span className="text-2xl font-bold">Provisions Link</span>
+          <Link to="/" className="flex items-center gap-2 group">
+            <img
+              src="/logo.svg"
+              alt="Provisions Link"
+              className="h-10 w-10 transition-transform group-hover:scale-105"
+            />
+            <span className="text-2xl font-bold bg-gradient-to-r from-emerald-700 to-teal-600 bg-clip-text text-transparent">
+              Provisions Link
+            </span>
           </Link>
 
           {/* Center: Navigation Links */}
@@ -182,10 +233,13 @@ export function Navbar() {
             {isAuthenticated ? (
               <>
                 {/* Cart Icon with Badge */}
-                <Link to="/cart" className="relative hover:text-primary transition-colors">
+                <Link
+                  to="/cart"
+                  className="relative hover:text-emerald-600 transition-colors"
+                >
                   <ShoppingCart className="h-5 w-5" />
                   {itemsCount > 0 && (
-                    <span className="absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground font-medium">
+                    <span className="absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 text-xs text-white font-medium shadow-md">
                       {itemsCount}
                     </span>
                   )}
